@@ -12,7 +12,9 @@ from fastai.vision.all import (
 from transformers import AutoImageProcessor
 
 from data import get_augmentation, HistoCRCDataset
-from utils import load_model, validate, validate_binarized
+from model import HistoClassifier
+from utils import validate, validate_binarized
+
 
 
 def train(
@@ -64,7 +66,18 @@ def train(
     train_ds.describe()
 
     # initialize model
-    model, config = load_model(backbone, train_ds.n_classes)
+    model = HistoClassifier.from_backbone(backbone, train_ds.n_classes)
+    model.config.update(
+        {
+            "categories": train_ds.categories,
+            "n_classes": train_ds.n_classes,
+            "inp_height": img_size[0],
+            "inp_width": img_size[1],
+            "mean": mean,
+            "std": std,
+            "backbone": backbone,
+        }
+    )
     model.to(device)
     print(model.head)
     print("Trainable parameters: ",
@@ -97,12 +110,10 @@ def train(
         CSVLogger(),
     ]
 
-    learner.fit_one_cycle(n_epoch=4, lr_max=1e-4, cbs=cbs)
+    learner.fit_one_cycle(n_epoch=1, lr_max=1e-4, cbs=cbs)
 
     # save best checkpoint
-    config.save_pretrained(model_save_path)
-    torch.save(learner.model.state_dict(), model_save_path / "model.pt")
-
+    learner.model.save_pretrained(model_save_path)
     # store performance of best checkpoint on validation dataset in file
     report = validate(model, valid_dl)
     print(report)
@@ -127,10 +138,10 @@ def get_run_name(backbone: str, is_binary: bool) -> str:
 
 
 if __name__ == "__main__":
-    backbone = "microsoft/swinv2-tiny-patch4-window8-256"  # "microsoft/swinv2-tiny-patch4-window8-256" #"google/efficientnet-b0" "google/efficientnet-b3"
+    backbone = "google/efficientnet-b0"  # "microsoft/swinv2-tiny-patch4-window8-256" #"google/efficientnet-b0" "google/efficientnet-b3"
     data_dir = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/data/")
     train_dir = data_dir / "NCT-CRC-HE-100K"
     valid_dir = data_dir / "CRC-VAL-HE-7K"
     save_dir = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/models/")
 
-    model = train(backbone, train_dir, valid_dir, save_dir, binary=True, batch_size=32)
+    model = train(backbone, valid_dir, valid_dir, save_dir, binary=True, batch_size=64)
