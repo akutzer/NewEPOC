@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 import numpy as np
 import torch
@@ -10,7 +10,7 @@ from transformers import AutoConfig, AutoModel, PretrainedConfig
 class HistoClassifierConfig(PretrainedConfig):
     def __init__(
         self,
-        categories: Optional[Tuple[dict, dict]] = None,
+        categories: Optional[List[str]] = None,
         n_classes: Optional[int] = None,
         inp_height: Optional[int] = None,
         inp_width: Optional[int] = None,
@@ -47,9 +47,6 @@ class HistoClassifierConfig(PretrainedConfig):
         return config_dict
 
 
-# TODO:
-# - add function "predict_category"
-# - update id2label, label2id
 class HistoClassifier(nn.Module):
     def __init__(self, backbone: str, hidden_dim: int, n_classes: int):
         super().__init__()
@@ -70,7 +67,7 @@ class HistoClassifier(nn.Module):
         return cat
 
     @classmethod
-    def from_backbone(cls, backbone_name: str, n_classes: int):
+    def from_backbone(cls, backbone_name: str, categories: List[str]):
         config = AutoConfig.from_pretrained(backbone_name)
         if hasattr(config, "hidden_dim"):
             hidden_dim = config.hidden_dim
@@ -79,10 +76,17 @@ class HistoClassifier(nn.Module):
         else:
             raise AttributeError
         config = HistoClassifierConfig(**config.to_dict())
-        config.update({"hidden_dim": hidden_dim, "n_classes": n_classes})
+        config.update(
+            {
+                "hidden_dim": hidden_dim,
+                "n_classes": len(categories),
+                "id2label": {i: cat for i, cat in enumerate(categories)},
+                "label2id": {cat: i for i, cat in enumerate(categories)},
+            }
+        )
 
         backbone = AutoModel.from_pretrained(backbone_name)
-        model = cls(backbone, hidden_dim, n_classes)
+        model = cls(backbone, config.hidden_dim, config.n_classes)
         model.config = config
         return model
 

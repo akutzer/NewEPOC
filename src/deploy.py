@@ -13,7 +13,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 model_path = Path(
-    "/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/models/efficientnet-b0_binary=True_2024-02-24T11:32:38.844"
+    "/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/models/efficientnet-b0_binary=False_2024-02-24T11:48:56.609"
 )
 model = HistoClassifier.from_pretrained(model_path)
 model.to(device)
@@ -30,7 +30,7 @@ mean, std = model.config.mean, model.config.std
 valid_aug = get_augmentation(img_size, mean, std, validation=True)
 
 # initialize datasets and dataloaders
-valid_ds = HistoCRCDataset(valid_dir, augmentation=valid_aug, reduce_to_binary=True)
+valid_ds = HistoCRCDataset(valid_dir, augmentation=valid_aug, reduce_to_binary=model.config.n_classes == 2)
 valid_dl = DataLoader(
     valid_ds,
     batch_size=batch_size,

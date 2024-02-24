@@ -66,7 +66,7 @@ def train(
     train_ds.describe()
 
     # initialize model
-    model = HistoClassifier.from_backbone(backbone, train_ds.n_classes)
+    model = HistoClassifier.from_backbone(backbone, train_ds.categories)
     model.config.update(
         {
             "categories": train_ds.categories,
@@ -144,4 +144,4 @@ if __name__ == "__main__":
     valid_dir = data_dir / "CRC-VAL-HE-7K"
     save_dir = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/models/")
 
-    model = train(backbone, valid_dir, valid_dir, save_dir, binary=True, batch_size=64)
+    model = train(backbone, valid_dir, valid_dir, save_dir, binary=False, batch_size=64)
