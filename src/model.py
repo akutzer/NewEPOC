@@ -18,7 +18,7 @@ class HistoClassifierConfig(PretrainedConfig):
         std: Optional[Tuple[float, float, float]] = None,
         backbone: Optional[str] = None,
         hidden_dim: Optional[int] = None,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.categories = categories
@@ -59,12 +59,37 @@ class HistoClassifier(nn.Module):
         out = self.head(out)
         return out
 
-    def predict_category(self, x, label=False) -> np.ndarray:
-        pred = self.head(self.backbone(x).pooler_output)
-        cat = torch.argmax(pred, dim=-1).cpu().numpy()
-        if label:
-            cat = np.take(self.config.categories, cat)
-        return cat
+    def predict(self, x) -> np.ndarray:
+        cache_mode = self.training
+        self.train(False)
+        if unsqueeze := (x.dim() == 3):
+            x = x.unsqueeze(0)
+
+        with torch.inference_mode():
+            pred = self.head(self.backbone(x).pooler_output)
+            probs = torch.softmax(pred, dim=-1).cpu()
+            if unsqueeze:
+                probs = probs[0]
+        probs, indices = torch.sort(probs, descending=True)
+        probs, indices = probs.numpy(), indices.numpy()
+        labels = np.take(self.config.categories, indices)
+
+        out = np.empty(
+            probs.shape,
+            dtype=np.dtype(
+                [
+                    ("label", labels.dtype),
+                    ("id", indices.dtype),
+                    ("probability", probs.dtype),
+                ]
+            ),
+        )
+        out["probability"] = probs
+        out["id"] = indices
+        out["label"] = labels
+
+        self.train(cache_mode)
+        return out
 
     @classmethod
     def from_backbone(cls, backbone_name: str, categories: List[str]):
