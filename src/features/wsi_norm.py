@@ -5,28 +5,28 @@ __version__ = "0.1.0"
 __maintainer__ = ["Omar"]
 __email__ = "omar.el_nahhas@tu-dresden.de"
 
-
-from pathlib import Path
-from contextlib import contextmanager
-import logging
 import os
+from pathlib import Path
+import logging
+from contextlib import contextmanager
+import random
+import time
+from datetime import timedelta
+
 import openslide
 from tqdm import tqdm
 from PIL import Image
-import cv2
-import time
-from datetime import timedelta
-from pathlib import Path
-from random import shuffle
-import torch
-from .helpers.stainNorm_Macenko import MacenkoNormalizer
-from .helpers.common import supported_extensions
-from .helpers.concurrent_canny_rejection import reject_background
-from .helpers.loading_slides import load_slide, load_slide_jpg, get_raw_tile_list
-from .helpers.feature_extractors import FeatureExtractor, extract_features_
-from .helpers.exceptions import MPPExtractionError
-from .helpers.utils import reconstruct_from_patches
 import numpy as np
+import torch
+
+from .normalizer.normalizer import MacenkoNormalizer
+from .helpers.common import supported_extensions
+from .helpers.background_rejection import filter_background
+from .helpers.load_slides import load_slide, load_slide_jpg
+from .helpers.load_patches import extract_patches, reconstruct_from_patches
+from .extractor.feature_extractors import FeatureExtractor, extract_features_
+from .helpers.exceptions import MPPExtractionError
+
 
 Image.MAX_IMAGE_PIXELS = None
 
@@ -130,7 +130,7 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Pat
         existing = [f for f in existing if f in [f.parent.name for f in img_dir]]
         img_dir = [f for f in img_dir if f.parent.name not in existing]
 
-    shuffle(img_dir)
+    random.shuffle(img_dir)
     num_total = len(img_dir) + len(existing)
     num_processed = 0
     error_slides = []
@@ -195,13 +195,16 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Pat
                         raw_image = Image.fromarray(slide_array)
                         save_image(raw_image, slide_cache_dir/"slide.jpg")
 
-                    # Do edge detection here and reject unnecessary tiles BEFORE normalization
-                    patches, patch_rejected, patch_shapes = reject_background(
-                        img=slide_array, patch_shape=patch_shape, step=step_size, cores=cores
-                    )
+                    
+                    patches, patches_coords = extract_patches(slide_array, patch_shape, pad=True)
+                    print(patches.shape, patches_coords.shape)
+                    # Canny edge detection to discard tiles containing no tissue BEFORE normalization
+                    tissue_patches, patches_coords = filter_background(patches, patches_coords, cores)
+                    print(patches.shape, patches_coords.shape)
+
                     if cache:
-                        print("Reconstructing canny img")
-                        canny_img = reconstruct_from_patches(patches, slide_array.shape[:2])
+                        print("Saving Canny background rejected image...")
+                        canny_img = reconstruct_from_patches(tissue_patches, patches_coords, slide_array.shape[:2])
                         save_image(canny_img, slide_cache_dir/"canny_slide.jpg")
 
                     # Pass raw slide_array for getting the initial concentrations, tissue_patches for actual normalization
@@ -210,18 +213,11 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Pat
                         start_normalizing = time.time()                        
                         stain_matrix = normalizer.get_stain_matrix(slide_array)
                         print(f"Get stain matrix ({time.time()-start_normalizing:.2f} seconds)")
-                        norm_patches = normalizer.transform(patches, stain_matrix, patch_rejected)                        
+                        tissue_patches = normalizer.transform(tissue_patches, stain_matrix)                        
                         print(f"Normalized slide ({time.time() - start_normalizing:.2f} seconds)")
                         if cache:
-                            norm_img = reconstruct_from_patches(norm_patches, slide_array.shape[:2])
+                            norm_img = reconstruct_from_patches(tissue_patches, patches_coords, slide_array.shape[:2])
                             save_image(norm_img, slide_cache_dir/"norm_slide.jpg")
-                    else:
-                        canny_img, patches, patches_coords = get_raw_tile_list(slide_array.shape, patches,
-                                                                                        patch_rejected, patch_shapes)
-
-                    if cache:
-                        print("Saving Canny background rejected image...")
-                        save_image(canny_img, slide_cache_dir/"canny_slide.jpg")
 
                     # Remove original slide jpg from memory
                     del slide_array
@@ -234,7 +230,7 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Pat
 
                 print("\nExtracting CTransPath features from slide...")
                 start_time = time.time()
-                if len(patches) > 0 and False:
+                if len(patches) > 0:
                     extract_features_(model=model, model_name=model_name, norm_wsi_img=patches,
                                     coords=patches_coords, wsi_name=slide_name, outdir=feat_out_dir, cores=cores,
                                     is_norm=norm, device=device if has_gpu else "cpu", target_microns=target_microns,
