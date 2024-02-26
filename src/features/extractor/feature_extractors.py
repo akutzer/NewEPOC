@@ -1,19 +1,20 @@
 import hashlib
 from pathlib import Path
+import json
+
 import torch
 import torch.nn as nn
+from torchvision import transforms #no marugoto dependency
+from torch.utils.data import Dataset, ConcatDataset
 import PIL
 import numpy as np
-#no marugoto dependency
-from torchvision import transforms
-from torch.utils.data import Dataset, ConcatDataset
 from tqdm import tqdm
-import json
 import h5py
 
 from .swin_transformer import swin_tiny_patch4_window7_224, ConvStem
 
 __version__ = "001_01-10-2023"
+
 
 class FeatureExtractor:
     def __init__(self):
@@ -39,9 +40,8 @@ class FeatureExtractor:
 
         ctranspath = torch.load(checkpoint_path, map_location=torch.device('cpu'))
         model.load_state_dict(ctranspath['model'], strict=True)
-        
-        if torch.cuda.is_available():
-            model = model.to(device)
+        model = model.to(device)
+        model.eval()
 
         print("CTransPath model successfully initialised...\n")
         model_name='xiyuewang-ctranspath-7c998680'

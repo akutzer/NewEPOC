@@ -20,12 +20,13 @@ import numpy as np
 import torch
 
 from .normalizer.normalizer import MacenkoNormalizer
+from .extractor.feature_extractors import FeatureExtractor, extract_features_
 from .helpers.common import supported_extensions
-from .helpers.background_rejection import filter_background
+from .helpers.exceptions import MPPExtractionError
 from .helpers.load_slides import load_slide, load_slide_jpg
 from .helpers.load_patches import extract_patches, reconstruct_from_patches
-from .extractor.feature_extractors import FeatureExtractor, extract_features_
-from .helpers.exceptions import MPPExtractionError
+from .helpers.background_rejection import filter_background
+
 
 
 Image.MAX_IMAGE_PIXELS = None
@@ -70,12 +71,14 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Pat
                target_microns: int = 256, patch_size: int = 224, keep_dir_structure: bool = False,
                device: str = "cuda", normalization_template: Path = None):
     has_gpu = torch.cuda.is_available()
+    device = torch.device(device) if "cuda" in device and has_gpu else torch.device("cpu")
     target_mpp = target_microns/patch_size
     patch_shape = (patch_size, patch_size) #(224, 224) by default
     step_size = patch_size #have 0 overlap by default
 
     # Initialize the feature extraction model
     print(f"Initialising CTransPath model as feature extractor...")
+    
     extractor = FeatureExtractor()
     model, model_name = extractor.init_feat_extractor(checkpoint_path=model_path, device=device)
 
@@ -195,12 +198,9 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Pat
                         raw_image = Image.fromarray(slide_array)
                         save_image(raw_image, slide_cache_dir/"slide.jpg")
 
-                    
-                    patches, patches_coords = extract_patches(slide_array, patch_shape, pad=True)
-                    print(patches.shape, patches_coords.shape)
                     # Canny edge detection to discard tiles containing no tissue BEFORE normalization
+                    patches, patches_coords = extract_patches(slide_array, patch_shape, pad=True)
                     tissue_patches, patches_coords = filter_background(patches, patches_coords, cores)
-                    print(patches.shape, patches_coords.shape)
 
                     if cache:
                         print("Saving Canny background rejected image...")
@@ -233,7 +233,7 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Pat
                 if len(patches) > 0:
                     extract_features_(model=model, model_name=model_name, norm_wsi_img=patches,
                                     coords=patches_coords, wsi_name=slide_name, outdir=feat_out_dir, cores=cores,
-                                    is_norm=norm, device=device if has_gpu else "cpu", target_microns=target_microns,
+                                    is_norm=norm, device=device, target_microns=target_microns,
                                     patch_size=patch_size)
                     logging.info(f" Extracted features from slide: {time.time() - start_time:.2f} seconds ({len(patches)} tiles)")
                     num_processed += 1
