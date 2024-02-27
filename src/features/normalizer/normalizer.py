@@ -23,6 +23,7 @@ class MacenkoNormalizer():
     def __init__(self):
         self.stain_matrix_target = None
         self.target_concentrations = None
+        self.maxC_target = None
 
     def fit(self, target):
         target = utils.standardize_brightness(target)

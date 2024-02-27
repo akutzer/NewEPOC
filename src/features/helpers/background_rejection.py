@@ -51,5 +51,5 @@ Tuple[np.ndarray, np.ndarray, List[Any]]:
     patches = patches[has_tissue]
     patches_coords = patches_coords[has_tissue]
 
-    print(f"Finished Canny background rejection, rejected {np.sum(has_tissue)}/{n} tiles ({time.time()-begin:.2f} seconds)")
+    print(f"Finished Canny background rejection, rejected {np.sum(~has_tissue)}/{n} tiles ({time.time()-begin:.2f} seconds)")
     return patches, patches_coords

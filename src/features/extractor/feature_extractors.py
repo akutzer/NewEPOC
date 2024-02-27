@@ -103,7 +103,7 @@ def store_metadata(outdir: Path, extractor_name: str,  patch_size: Tuple[int, in
 
 def store_features(outdir: Path, features: np.ndarray, patches_coords: np.ndarray, extractor_name: str):
     with h5py.File(f'{outdir}.h5', 'w') as f:
-        f['coords'] = patches_coords
+        f['coords'] = patches_coords[:, ::-1] # store as (w, h) not (h, w) for backwards compatibility
         f['feats'] = features
         f['augmented'] = np.repeat(
             [False, True], [features.shape[0], 0])

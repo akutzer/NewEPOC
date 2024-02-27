@@ -115,7 +115,7 @@ def get_target_concentrations(arr, stain_matrix):
 
 
 def get_src_concentration(patches_flat, stain_matrix, cores: int=8):
-    print(f"Normalising {patches_flat.shape[0]} tiles...")
+    print(f"Normalizing {patches_flat.shape[0]} tiles...")
     n, pxls = patches_flat.shape[0], patches_flat.shape[1] * patches_flat.shape[2]
     src_concentrations = np.zeros((n, pxls, 2), dtype=np.float64)
 
