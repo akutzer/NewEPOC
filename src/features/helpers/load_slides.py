@@ -51,26 +51,6 @@ def load_slide(slide: openslide.OpenSlide, target_mpp: float = 256/224, cores: i
     return img
 
 
-def load_slide_jpg(slide_jpg: Image, patch_shape: Tuple[int, int]):
-    img = Image.open(slide_jpg)
-    arr = np.array(img)
-    
-    h_stride, w_stride = patch_shape
-    h_patches, w_patches = np.array(arr.shape[:2]) // patch_shape
-    n = h_patches * w_patches
-
-    patches, patch_coords = [], []
-    for i in range(h_patches):
-        for j in range(w_patches):
-            x, y = i*h_stride, j*w_stride   # (height-coord, width-coord)
-            patch = arr[x:x+h_stride, y:y+w_stride, :]
-            # keep if patch is not fully black (i.e. rejected previously)
-            if np.any(patch):
-                patches.append(patch)
-                patch_coords.append((x, y))
-    return patches, patch_coords, n
-
-
 def get_slide_mpp(slide: openslide.OpenSlide) -> float:
     try:
         slide_mpp = float(slide.properties[openslide.PROPERTY_NAME_MPP_X])

@@ -20,10 +20,10 @@ import numpy as np
 import torch
 
 from .normalizer.normalizer import MacenkoNormalizer
-from .extractor.feature_extractors import FeatureExtractor, extract_features_
+from .extractor.feature_extractors import FeatureExtractor, store_features, store_metadata
 from .helpers.common import supported_extensions
 from .helpers.exceptions import MPPExtractionError
-from .helpers.load_slides import load_slide, load_slide_jpg
+from .helpers.load_slides import load_slide
 from .helpers.load_patches import extract_patches, reconstruct_from_patches
 from .helpers.background_rejection import filter_background
 
@@ -72,22 +72,20 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Pat
                device: str = "cuda", normalization_template: Path = None):
     has_gpu = torch.cuda.is_available()
     device = torch.device(device) if "cuda" in device and has_gpu else torch.device("cpu")
-    target_mpp = target_microns/patch_size
-    patch_shape = (patch_size, patch_size) #(224, 224) by default
-    step_size = patch_size #have 0 overlap by default
+
+    target_mpp = target_microns / patch_size
+    patch_size = (patch_size, patch_size) # (224, 224) by default
 
     # Initialize the feature extraction model
     print(f"Initialising CTransPath model as feature extractor...")
-    
-    extractor = FeatureExtractor()
-    model, model_name = extractor.init_feat_extractor(checkpoint_path=model_path, device=device)
+    extractor = FeatureExtractor.from_checkpoint(checkpoint_path=model_path, device=device)
 
     # Create cache and output directories
     if cache:
         cache_dir.mkdir(exist_ok=True, parents=True)
     output_dir.mkdir(parents=True, exist_ok=True)
     norm_method = "STAMP_macenko_" if norm else "STAMP_raw_"
-    model_name_norm = Path(norm_method + model_name)
+    model_name_norm = Path(norm_method + extractor.model_name)
     output_file_dir = output_dir/model_name_norm
     output_file_dir.mkdir(parents=True, exist_ok=True)
 
@@ -98,7 +96,7 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Pat
     logging.getLogger().addHandler(logging.StreamHandler())
     logging.info("Preprocessing started at: " + time.strftime("%Y-%m-%d %H:%M:%S"))
     logging.info(f"Norm: {norm} | Target_microns: {target_microns} | Patch_size: {patch_size} | MPP: {target_mpp}")
-    logging.info(f"Model: {model_name}\n")
+    logging.info(f"Model: {extractor.model_name}\n")
     print(f"Current working directory: {os.getcwd()}")
     print(f"Stored logfile in {logdir}")
     print(f"Number of CPUs in the system: {os.cpu_count()}")
@@ -111,7 +109,7 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Pat
     if norm:
         print("\nInitialising Macenko normaliser...")
         normalizer = MacenkoNormalizer()
-        print(f"Template: {normalization_template}")
+        print(f"Reference: {normalization_template}")
         target = Image.open(normalization_template).convert('RGB')
         normalizer.fit(np.array(target))  
 
@@ -158,7 +156,8 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Pat
                     (only_feature_extraction and (slide_jpg := slide_url).exists()) or \
                     (slide_jpg := slide_cache_dir/"norm_slide.jpg").exists()
                 ):
-                    patches, patches_coords, n = load_slide_jpg(slide_jpg, patch_shape)
+                    slide_array = np.array(Image.open(slide_jpg))
+                    patches, patches_coords, n = extract_patches(slide_array, patch_size, pad=False, drop_empty=True)
                     print(f"Loaded {img_name}, {len(patches)}/{n} tiles remain")
                 else:
                     try:
@@ -199,24 +198,22 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Pat
                         save_image(raw_image, slide_cache_dir/"slide.jpg")
 
                     # Canny edge detection to discard tiles containing no tissue BEFORE normalization
-                    patches, patches_coords = extract_patches(slide_array, patch_shape, pad=True)
-                    tissue_patches, patches_coords = filter_background(patches, patches_coords, cores)
+                    patches, patches_coords, _ = extract_patches(slide_array, patch_size, pad=False, drop_empty=True)
+                    patches, patches_coords = filter_background(patches, patches_coords, cores)
 
                     if cache:
                         print("Saving Canny background rejected image...")
-                        canny_img = reconstruct_from_patches(tissue_patches, patches_coords, slide_array.shape[:2])
+                        canny_img = reconstruct_from_patches(patches, patches_coords, slide_array.shape[:2])
                         save_image(canny_img, slide_cache_dir/"canny_slide.jpg")
 
                     # Pass raw slide_array for getting the initial concentrations, tissue_patches for actual normalization
                     if norm:
                         print(f"\nNormalizing slide...")
                         start_normalizing = time.time()                        
-                        stain_matrix = normalizer.get_stain_matrix(slide_array)
-                        print(f"Get stain matrix ({time.time()-start_normalizing:.2f} seconds)")
-                        tissue_patches = normalizer.transform(tissue_patches, stain_matrix)                        
+                        patches = normalizer.transform(slide_array, patches)                        
                         print(f"Normalized slide ({time.time() - start_normalizing:.2f} seconds)")
                         if cache:
-                            norm_img = reconstruct_from_patches(tissue_patches, patches_coords, slide_array.shape[:2])
+                            norm_img = reconstruct_from_patches(patches, patches_coords, slide_array.shape[:2])
                             save_image(norm_img, slide_cache_dir/"norm_slide.jpg")
 
                     # Remove original slide jpg from memory
@@ -231,10 +228,15 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Pat
                 print("\nExtracting CTransPath features from slide...")
                 start_time = time.time()
                 if len(patches) > 0:
-                    extract_features_(model=model, model_name=model_name, norm_wsi_img=patches,
-                                    coords=patches_coords, wsi_name=slide_name, outdir=feat_out_dir, cores=cores,
-                                    is_norm=norm, device=device, target_microns=target_microns,
-                                    patch_size=patch_size)
+                    store_metadata(
+                        outdir=feat_out_dir,
+                        extractor_name=extractor.name,
+                        patch_size=patch_size,
+                        target_microns=target_microns,
+                        normalized=norm
+                    )
+                    features = extractor.extract(patches, cores, batch_size=16)
+                    store_features(feat_out_dir, features, patches_coords, extractor.name)
                     logging.info(f" Extracted features from slide: {time.time() - start_time:.2f} seconds ({len(patches)} tiles)")
                     num_processed += 1
                 else:

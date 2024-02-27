@@ -17,8 +17,7 @@ def remove_zeros(I):
     Remove zeros, replace with 1's.
     :param I: uint8 array
     """
-    mask = (I == 0)
-    I[mask] = 1
+    I[(I == 0)] = 1
     return I
 
 
@@ -63,6 +62,20 @@ def principle_colors(V, minPhi, maxPhi):
     v1 = np.dot(V, np.array([np.cos(minPhi), np.sin(minPhi)]))
     v2 = np.dot(V, np.array([np.cos(maxPhi), np.sin(maxPhi)]))
     return v1, v2
+
+
+@njit
+def get_phi(OD, V, angular_percentile):
+    # Project on this basis.
+    That = np.dot(OD, V)
+
+    # Angular coordinates with repect to the prinicple, orthogonal eigenvectors
+    phi = np.arctan2(That[:, 1], That[:, 0])
+    minPhi = np.percentile(phi, 100 - angular_percentile)
+    maxPhi = np.percentile(phi, angular_percentile)
+    return minPhi, maxPhi
+
+
 
 
 @njit
@@ -114,7 +127,7 @@ def get_src_concentration(patches_flat, stain_matrix, cores: int=8):
             future = executor.submit(get_target_concentrations, patch, stain_matrix)
             future_coords[future] = k
 
-        for tile_future in tqdm(futures.as_completed(future_coords), total=patches_flat.shape[0], desc='Normalizing tiles', leave=False):
+        for tile_future in tqdm(futures.as_completed(future_coords), total=patches_flat.shape[0], desc='Calculating concentrations', leave=False):
             k = future_coords[tile_future]
             src_concentrations[k] = tile_future.result()
   
