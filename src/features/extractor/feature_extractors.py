@@ -1,16 +1,15 @@
-import hashlib
-from pathlib import Path
 import json
-
+from pathlib import Path
+from typing import Tuple
+import hashlib
 import torch
 import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms #no marugoto dependency
-from torch.utils.data import Dataset, ConcatDataset
 from PIL import Image
 import numpy as np
-from tqdm import tqdm
 import h5py
-from typing import Tuple
+from tqdm import tqdm
 
 from .swin_transformer import swin_tiny_patch4_window7_224, ConvStem
 
@@ -73,7 +72,7 @@ class FeatureExtractor:
         ])
 
         dataset = SlideTileDataset(patches, transform)
-        dataloader = torch.utils.data.DataLoader(
+        dataloader = DataLoader(
             dataset, batch_size=batch_size, shuffle=False, num_workers=cores,
             drop_last=False, pin_memory=self.device != torch.device('cpu')
         )

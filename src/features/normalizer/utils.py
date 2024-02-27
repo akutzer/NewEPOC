@@ -76,8 +76,6 @@ def get_phi(OD, V, angular_percentile):
     return minPhi, maxPhi
 
 
-
-
 @njit
 def calc_hematoxylin(source_concentrations, h, w):
     H = source_concentrations[:, 0].reshape(h, w)

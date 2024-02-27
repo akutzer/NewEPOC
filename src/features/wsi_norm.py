@@ -69,7 +69,7 @@ def save_image(image, path: Path):
 def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Path, norm: bool,
                del_slide: bool, only_feature_extraction: bool, cache: bool = True, cores: int = 8,
                target_microns: int = 256, patch_size: int = 224, keep_dir_structure: bool = False,
-               device: str = "cuda", normalization_template: Path = None):
+               device: str = "cuda", normalization_template: Path = None, batch_size: int = 64):
     has_gpu = torch.cuda.is_available()
     device = torch.device(device) if "cuda" in device and has_gpu else torch.device("cpu")
 
@@ -235,9 +235,9 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Pat
                         target_microns=target_microns,
                         normalized=norm
                     )
-                    features = extractor.extract(patches, cores, batch_size=16)
+                    features = extractor.extract(patches, cores, batch_size)
                     store_features(feat_out_dir, features, patches_coords, extractor.name)
-                    logging.info(f" Extracted features from slide: {time.time() - start_time:.2f} seconds ({len(patches)} tiles)")
+                    logging.info(f" Extracted features from slide: {time.time() - start_time:.2f} seconds ({features.shape[0]} tiles)")
                     num_processed += 1
                 else:
                     logging.error(" 0 tiles remain to extract features from after pre-processing. Continuing...")
