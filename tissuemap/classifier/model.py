@@ -4,7 +4,12 @@ from typing import Optional, Tuple, List
 import numpy as np
 import torch
 from torch import nn
+from torch.utils.data import Dataset, DataLoader
 from transformers import AutoConfig, AutoModel, PretrainedConfig
+from tqdm import tqdm
+
+from tissuemap.classifier.data import get_augmentation, HistoCRCDataset
+
 
 
 class HistoClassifierConfig(PretrainedConfig):
@@ -53,8 +58,10 @@ class HistoClassifier(nn.Module):
         self.backbone = backbone
         self.head = nn.Sequential(nn.Flatten(), nn.Linear(hidden_dim, n_classes))
         self.config = None
+        self.device = None
+        self.dtype = next(self.parameters()).dtype
 
-    def forward(self, x) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = self.backbone(x).pooler_output
         out = self.head(out)
         return out
@@ -90,9 +97,36 @@ class HistoClassifier(nn.Module):
 
         self.train(cache_mode)
         return out
+    
+    def predict_patches(
+            self, patches: np.ndarray, cores: int = 8, batch_size: int = 64
+    ) -> np.ndarray:
+        img_size = (self.config.inp_height, self.config.inp_width)
+        mean, std = self.config.mean, self.config.std
+        transform = get_augmentation(img_size, mean, std, validation=True)
+
+        dataset = SlideTileDataset(patches, transform)
+        dataloader = DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=cores,
+            drop_last=False,
+            pin_memory=self.device != torch.device("cpu"),
+        )
+
+        features = []
+        with torch.inference_mode():
+            for patches_batch in tqdm(dataloader, leave=False):
+                patches_batch = patches_batch.to(dtype=self.dtype, device=self.device)
+                features_batch = self.predict(patches_batch)
+                features.append(features_batch)
+
+        features = np.concatenate(features, axis=0)
+        return features
 
     @classmethod
-    def from_backbone(cls, backbone_name: str, categories: List[str]):
+    def from_backbone(cls, backbone_name: str, categories: List[str], device: str = "cpu"):
         config = AutoConfig.from_pretrained(backbone_name)
         if hasattr(config, "hidden_dim"):
             hidden_dim = config.hidden_dim
@@ -113,25 +147,44 @@ class HistoClassifier(nn.Module):
         backbone = AutoModel.from_pretrained(backbone_name)
         model = cls(backbone, config.hidden_dim, config.n_classes)
         model.config = config
+        model.to(device)
         return model
 
     @classmethod
-    def from_pretrained(
-        cls, pretrained_model_path: str, n_classes: Optional[int] = None
-    ):
+    def from_pretrained(cls, pretrained_model_path: str, device: str = "cpu"):
         model_dir = Path(pretrained_model_path)
         assert model_dir.is_dir()
 
         config = HistoClassifierConfig.from_pretrained(model_dir)
         backbone = AutoModel.from_pretrained(config.backbone)
         model = cls(backbone, config.hidden_dim, config.n_classes)
-        state_dict = torch.load(model_dir / "model.pt")
+        state_dict = torch.load(model_dir / "model.pt", map_location=torch.device("cpu"))
         model.load_state_dict(state_dict)
         model.config = config
-
+        model.to(device)
         return model
 
     def save_pretrained(self, path: str):
         path = Path(path)
         self.config.save_pretrained(path)
         torch.save(self.state_dict(), path / "model.pt")
+
+    def to(self, device: str, dtype=None):
+        self.device = torch.device(device)
+        return super().to(self.device, dtype)
+
+
+class SlideTileDataset(Dataset):
+    def __init__(self, patches: np.array, transform=None) -> None:
+        self.tiles = patches
+        self.transform = transform
+
+    def __len__(self) -> int:
+        return len(self.tiles)
+
+    def __getitem__(self, i) -> torch.Tensor:
+        image = self.tiles[i]
+        if self.transform:
+            image = self.transform(image)
+
+        return image

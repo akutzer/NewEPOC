@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tissueMAP"
+version = "0.0.1"
+authors = [
+  { name="Example Author", email="author@example.com" },
+]
+description = "A tumor feature visualizer"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+  "pandas~=2.1",
+  "matplotlib~=3.8",
+  "scikit-learn~=1.3",
+  "tqdm~=4.66",
+  "fastai~=2.7",
+  "torch~=2.0",
+  "torchvision~=0.15",
+  "h5py~=3.10",
+  "jaxtyping~=0.2",
+  "einops~=0.7",
+  "omegaconf~=2.3",
+  "openslide-python~=1.3",
+  "opencv-python~=4.8",
+  "numba~=0.58",
+  "gdown~=4.7",
+  "openpyxl~=3.1"
+]
+
+
+[project.urls]
+Homepage = "https://github.com/pypa/sampleproject"
+Issues = "https://github.com/pypa/sampleproject/issues"
+
+
+[tool.hatch.build]
+include = [
+  "tissuemap/**/*"
+]

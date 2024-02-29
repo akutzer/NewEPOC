@@ -23,7 +23,12 @@ def get_augmentation(
     std: Sequence[float] = [0.229, 0.224, 0.225],
     validation: bool = False,
 ) -> v2.Transform:
-    transform = [v2.ToDtype(torch.float32, scale=True)]
+    transform = [
+        v2.ToImage(),  # Convert to tensor, only needed for PIL images
+        v2.ToDtype(torch.uint8, scale=True),  # optional, most input are already uint8 at this point
+        v2.Resize(size=img_size, antialias=True),
+        v2.ToDtype(torch.float32, scale=True),  # Normalize expects float
+    ]
     if validation:
         transform.append(v2.Resize(img_size))
     else:

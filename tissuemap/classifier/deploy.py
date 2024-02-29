@@ -12,14 +12,15 @@ from utils import validate
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-model_path = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/models/efficientnet-b0_binary=False_2024-02-24T11:48:56.609")
+model_path = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/tissueMAP/models/efficientnet-b0_binary=False_2024-02-28T18:04:40.935")
+model_path = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/tissueMAP/models/swinv2-tiny-patch4-window8-256_binary=False_2024-02-28T18:24:45.937")
 model = HistoClassifier.from_pretrained(model_path)
 model.to(device)
 
 
-data_dir = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/data/")
-valid_dir = data_dir / "CRC-VAL-HE-7K"
-batch_size = 4
+data_dir = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/tissueMAP/data/")
+valid_dir = data_dir / "NCT-CRC-HE-100K-NONORM" # "NCT-CRC-HE-100K-NONORM"  "CRC-VAL-HE-7K"
+batch_size = 16
 
 img_size = (model.config.inp_height, model.config.inp_width)
 mean, std = model.config.mean, model.config.std

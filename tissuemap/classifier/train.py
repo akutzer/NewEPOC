@@ -11,11 +11,19 @@ from fastai.vision.all import (
 )
 from transformers import AutoImageProcessor
 
-from data import get_augmentation, HistoCRCDataset
-from model import HistoClassifier
-from utils import validate, validate_binarized
+from tissuemap.classifier.data import get_augmentation, HistoCRCDataset
+from tissuemap.classifier.model import HistoClassifier
+from tissuemap.classifier.utils import validate, validate_binarized
 
-
+# class CustomSaveModelCallback(SaveModelCallback):
+#     def __init__(self, model_save_path: Path, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         self.model_save_path = model_save_path
+    
+#     def _save(self, name):
+#         self.learn.model.save_pretrained(self.model_save_path)
+#         # self.last_saved_path = self.learn.save(name, with_opt=self.with_opt)
+    
 
 def train(
     backbone: str,
@@ -105,15 +113,19 @@ def train(
     )
 
     cbs = [
-        # SaveModelCallback(monitor='valid_loss', fname=f'best_valid'),
+        # CustomSaveModelCallback(monitor='valid_loss', model_save_path=model_save_path),
+        SaveModelCallback(monitor='valid_loss'),
         EarlyStoppingCallback(monitor="valid_loss", min_delta=0.01, patience=4),
         CSVLogger(),
     ]
 
-    learner.fit_one_cycle(n_epoch=1, lr_max=1e-4, cbs=cbs)
+    learner.fit_one_cycle(n_epoch=2, lr_max=1e-4, cbs=cbs)
 
     # save best checkpoint
     learner.model.save_pretrained(model_save_path)
+    print(model_save_path / "models")
+    (model_save_path / "models" / "model.pth").unlink()
+    (model_save_path / "models").rmdir()
     # store performance of best checkpoint on validation dataset in file
     report = validate(model, valid_dl)
     print(report)
@@ -123,7 +135,7 @@ def train(
         report = validate_binarized(model, valid_dl)
         print(report)
         with open(model_save_path / "report.txt", mode="a") as f:
-            f.write(5 * "\n" + "Binarized:")
+            f.write(5 * "\n" + "Binarized:\n")
             f.write(report)
 
     return model
@@ -138,10 +150,10 @@ def get_run_name(backbone: str, is_binary: bool) -> str:
 
 
 if __name__ == "__main__":
-    backbone = "google/efficientnet-b0"  # "microsoft/swinv2-tiny-patch4-window8-256" #"google/efficientnet-b0" "google/efficientnet-b3"
+    backbone = "google/efficientnet-b3" #"microsoft/swinv2-tiny-patch4-window8-256"  # "microsoft/swinv2-tiny-patch4-window8-256" #"google/efficientnet-b0" "google/efficientnet-b3"
     data_dir = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/data/")
     train_dir = data_dir / "NCT-CRC-HE-100K"
     valid_dir = data_dir / "CRC-VAL-HE-7K"
     save_dir = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/models/")
 
-    model = train(backbone, valid_dir, valid_dir, save_dir, binary=False, batch_size=64)
+    model = train(backbone, train_dir, valid_dir, save_dir, binary=False, batch_size=16)

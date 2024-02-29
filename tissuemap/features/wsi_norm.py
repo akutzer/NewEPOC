@@ -12,6 +12,7 @@ from contextlib import contextmanager
 import time
 from datetime import timedelta
 from typing import Optional
+import random
 
 import openslide
 from tqdm import tqdm
@@ -21,6 +22,7 @@ import torch
 
 from .normalizer.normalizer import MacenkoNormalizer
 from .extractor.feature_extractors import FeatureExtractor, store_features, store_metadata
+from tissuemap.classifier.model import HistoClassifier
 from .helpers.common import supported_extensions
 from .helpers.exceptions import MPPExtractionError
 from .helpers.load_slides import load_slide
@@ -66,8 +68,8 @@ def save_image(image, path: Path):
     image.save(path)
 
 
-def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Optional[Path] = None,
-               norm: bool = False, normalization_template: Optional[Path] = None,
+def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, classifier_model_path: Path,
+               cache_dir: Path, cache: bool = False, norm: bool = False, normalization_template: Optional[Path] = None,
                del_slide: bool = False, only_feature_extraction: bool = False,
                keep_dir_structure: bool = False, cores: int = 8, target_microns: int = 256,
                patch_size: int = 224, batch_size: int = 64, device: str = "cuda"
@@ -80,6 +82,7 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Opt
     has_gpu = torch.cuda.is_available()
     device = torch.device(device) if "cuda" in device and has_gpu else torch.device("cpu")
     extractor = FeatureExtractor.from_checkpoint(checkpoint_path=model_path, device=device)
+    patch_classifier = HistoClassifier.from_pretrained(classifier_model_path, device=device)
 
     # Create output and cache directories
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -87,7 +90,6 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Opt
     model_name_norm = Path(norm_method + extractor.model_name)
     output_file_dir = output_dir/model_name_norm
     output_file_dir.mkdir(parents=True, exist_ok=True)
-    cache = isinstance(cache_dir, Path)
     if cache:
         cache_dir.mkdir(exist_ok=True, parents=True)
 
@@ -134,6 +136,7 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Opt
         existing = [f for f in existing if f in [f.parent.name for f in img_dir]]
         img_dir = [f for f in img_dir if f.parent.name not in existing]
 
+    random.shuffle(img_dir)
     num_processed, num_total = 0, len(img_dir) + len(existing)
     error_slides = []
     if len(existing):
@@ -157,14 +160,15 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Opt
                     (only_feature_extraction and (slide_jpg := slide_url).exists()) or \
                     (slide_jpg := slide_cache_dir/"norm_slide.jpg").exists()
                 ):
+                    slide_array = np.array(Image.open(slide_jpg))
+                    patches, patches_coords, n = extract_patches(slide_array, patch_size, pad=False, drop_empty=True, overlap=False)
+                    print(f"Loaded {img_name}, {patches.shape[0]}/{n} tiles remain")
                     # note that due to being stored as an JPEG rejected patches which
                     # neighbor accepted patches will most likely also be loaded
-                    # thus when loading patches this way there will be more slides,
-                    # therefore we apply again a background filtering
-                    slide_array = np.array(Image.open(slide_jpg))
-                    patches, patches_coords, n = extract_patches(slide_array, patch_size, pad=False, drop_empty=True)
-                    print(f"Loaded {img_name}, {len(patches)}/{n} tiles remain")
+                    # thus we again apply a background filtering
                     patches, patches_coords = filter_background(patches, patches_coords, cores)
+                    # patches.shape = (n_patches, patch_h, patch_w, 3)
+                    # patches_coords.shape = (n_patches, 2)
                 else:
                     try:
                         slide = openslide.OpenSlide(slide_url)
@@ -204,8 +208,10 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Opt
                         save_image(raw_image, slide_cache_dir/"slide.jpg")
 
                     # Canny edge detection to discard tiles containing no tissue BEFORE normalization
-                    patches, patches_coords, _ = extract_patches(slide_array, patch_size, pad=False, drop_empty=True)
+                    patches, patches_coords, _ = extract_patches(slide_array, patch_size, pad=False, drop_empty=True, overlap=False)
                     patches, patches_coords = filter_background(patches, patches_coords, cores)
+                    # patches.shape = (n_patches, patch_h, patch_w, 3)
+                    # patches_coords.shape = (n_patches, 2)
 
                     if cache:
                         print("Saving Canny background rejected image...")
@@ -216,7 +222,7 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Opt
                     if norm:
                         print(f"\nNormalizing slide...")
                         start_normalizing = time.time()                        
-                        patches = normalizer.transform(slide_array, patches)                        
+                        patches = normalizer.transform(slide_array, patches, cores, legacy_norm=False)                        
                         print(f"Normalized slide ({time.time() - start_normalizing:.2f} seconds)")
                         if cache:
                             norm_img = reconstruct_from_patches(patches, patches_coords, slide_array.shape[:2])
@@ -242,7 +248,8 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Opt
                         normalized=norm
                     )
                     features = extractor.extract(patches, cores, batch_size)
-                    store_features(feat_out_dir, features, patches_coords, extractor.name)
+                    patch_cls = patch_classifier.predict_patches(patches, cores, batch_size)
+                    store_features(feat_out_dir, features, patch_cls, patches_coords, extractor.name)
                     logging.info(f" Extracted features from slide: {time.time() - start_time:.2f} seconds ({features.shape[0]} tiles)")
                     num_processed += 1
                 else:
@@ -260,7 +267,7 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, cache_dir: Opt
                 if os.path.exists(slide_url):
                     os.remove(slide_url)
 
-    logging.info(f"\n\n===== End-to-end processing time of {num_total} slides: {str(timedelta(seconds=(time.time() - total_start_time)))} =====")
+    logging.info(f"\n===== End-to-end processing time of {num_total} slides: {str(timedelta(seconds=(time.time() - total_start_time)))} =====")
     logging.info(f"Summary: Processed {num_processed} slides, encountered {len(error_slides)} errors, skipped {len(existing)} readily-processed slides")
     if len(error_slides):
-        logging.info("The following slides were not processed due to errors:\n\t" + "\n\t".join(error_slides))
+        logging.info("The following slides were not processed due to errors:\n  " + "\n  ".join(error_slides))
