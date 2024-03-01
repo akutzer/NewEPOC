@@ -4,7 +4,7 @@ from datetime import datetime
 
 import torch
 from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset
 from fastai.vision.all import (
     Learner, DataLoaders, RocAuc, RocAucBinary, F1Score, AccumMetric, 
     Precision, Recall, accuracy, SaveModelCallback, CSVLogger, EarlyStoppingCallback,
@@ -27,7 +27,7 @@ from tissuemap.classifier.utils import validate, validate_binarized
 
 def train(
     backbone: str,
-    train_dir: str,
+    train_dirs: str,
     valid_dir: str,
     save_dir: str = "models/",
     batch_size: int = 64,
@@ -50,8 +50,10 @@ def train(
     valid_aug = get_augmentation(img_size, mean, std, validation=True)
 
     # initialize datasets and dataloaders
-    train_ds = HistoCRCDataset(
+    
+    train_ds = ConcatDataset([HistoCRCDataset(
         train_dir, augmentation=train_aug, reduce_to_binary=binary
+    ) for  train_dir in train_dirs]
     )
     valid_ds = HistoCRCDataset(
         valid_dir, augmentation=valid_aug, reduce_to_binary=binary
@@ -71,14 +73,14 @@ def train(
         num_workers=os.cpu_count(),
         pin_memory=True,
     )
-    train_ds.describe()
+    train_ds.datasets[0].describe()
 
     # initialize model
-    model = HistoClassifier.from_backbone(backbone, train_ds.categories)
+    model = HistoClassifier.from_backbone(backbone, train_ds.datasets[0].categories)
     model.config.update(
         {
-            "categories": train_ds.categories,
-            "n_classes": train_ds.n_classes,
+            "categories": train_ds.datasets[0].categories,
+            "n_classes": train_ds.datasets[0].n_classes,
             "inp_height": img_size[0],
             "inp_width": img_size[1],
             "mean": mean,
@@ -93,7 +95,7 @@ def train(
     )
 
     # initialize fastai learner
-    weight = train_ds.inv_weights().to(device)
+    weight = train_ds.datasets[0].inv_weights().to(device)
     criterion = nn.CrossEntropyLoss(weight=weight, label_smoothing=0)
     dls = DataLoaders(train_dl, valid_dl, device=device)
     learner = Learner(
@@ -150,10 +152,10 @@ def get_run_name(backbone: str, is_binary: bool) -> str:
 
 
 if __name__ == "__main__":
-    backbone = "google/efficientnet-b3" #"microsoft/swinv2-tiny-patch4-window8-256"  # "microsoft/swinv2-tiny-patch4-window8-256" #"google/efficientnet-b0" "google/efficientnet-b3"
-    data_dir = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/data/")
-    train_dir = data_dir / "NCT-CRC-HE-100K"
-    valid_dir = data_dir / "CRC-VAL-HE-7K"
-    save_dir = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/models/")
+    backbone = "google/efficientnet-b0" #"microsoft/swinv2-tiny-patch4-window8-256"  # "microsoft/swinv2-tiny-patch4-window8-256" #"google/efficientnet-b0" "google/efficientnet-b3"
+    data_dir = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/tissueMAP/data/")
+    train_dirs = [data_dir / "NCT-CRC-HE-100K-RENORM", data_dir / "NCT-CRC-HE-100K-NONORM"]
+    valid_dir = data_dir / "CRC-VAL-HE-7K-RENORM"
+    save_dir = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/tissueMAP/models/")
 
-    model = train(backbone, train_dir, valid_dir, save_dir, binary=False, batch_size=16)
+    model = train(backbone, train_dirs, valid_dir, save_dir, binary=False, batch_size=64)
