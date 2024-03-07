@@ -1,6 +1,6 @@
 import numpy as np
-from PIL import Image, ImageDraw
-from typing import Tuple
+from PIL import Image, ImageDraw, ImageFont
+from typing import Tuple, Optional
 
 
 def extract_patches(
@@ -51,7 +51,7 @@ def extract_patches(
 
 
 def reconstruct_from_patches(
-    patches: np.ndarray, patches_coords: np.array, img_shape: Tuple[int, int]
+    patches: np.ndarray, patches_coords: np.array, img_shape: Tuple[int, int], patch_classes: Optional[np.array] = None
 ) -> np.ndarray:
     """
     Reconstruct the WSI from the patches.
@@ -59,10 +59,28 @@ def reconstruct_from_patches(
     """
     img_h, img_w = img_shape
     patch_h, patch_w = patches.shape[1:3]
-    img = Image.new("RGB", (img_w, img_h))
-    for (x, y), patch in zip(patches_coords, patches):  # (x, y) = (height, width)
+    img = Image.new("RGBA", (img_w, img_h))
+    zipped = zip(patches_coords, patches) if patch_classes is None else zip(patches_coords, patches, patch_classes)
+    for (x, y), patch, *patch_class in zipped:  # (x, y) = (height, width)
+        patch_img = Image.fromarray(patch).convert("RGBA")
+        # draw patch boxes and tissue type predictions
+        if patch_class:
+            overlay = Image.new('RGBA', patch_img.size, (0, 0, 0, 0))
+            draw = ImageDraw.Draw(overlay)
+            # draw box
+            cls_name, cls_id, prob = patch_class[0][0]            
+            draw.rectangle(((0,0), patch.shape[:2]), outline="black" if cls_id < 6 else "red", width=2, fill=(0, 0, 0, 50) if cls_id < 6 else None)
+            # write tissue type in the top left corner and add some backdrop
+            text = f"{cls_name} ({cls_id}, {str(round(prob, 2))})"
+            font = ImageFont.load_default(14).font
+            draw.rectangle([(3, 3), tuple((1.05, 1.2) * np.array(font.getsize(text)[0]))], fill=(0, 0, 0, 160))
+            draw.text((3, 3), text, anchor="lt", fill="white", font_size=14, stroke_width=0)
+
+            patch_img = Image.alpha_composite(patch_img, overlay)
         img.paste(
-            Image.fromarray(patch[:patch_h, :patch_w]),
+            patch_img,
             (y, x, y + patch_w, x + patch_h)
         )
-    return img
+        
+    return img.convert("RGB")
+

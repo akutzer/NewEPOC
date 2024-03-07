@@ -11,9 +11,9 @@ import matplotlib.pyplot as plt
 
 def get_imgs(directory: Path) -> List[str]:
     endings = ["png", "jpg", "jpeg", "tif", "tiff", "bmp", "gif"]
-    img_paths = [
+    img_paths = sorted([
         str(path) for ending in endings for path in directory.glob(f"**/*.{ending}")
-    ]
+    ])
     return img_paths
 
 
@@ -29,9 +29,7 @@ def get_augmentation(
         v2.Resize(size=img_size, antialias=True),
         v2.ToDtype(torch.float32, scale=True),  # Normalize expects float
     ]
-    if validation:
-        transform.append(v2.Resize(img_size))
-    else:
+    if not validation:
         transform.extend(
             [
                 v2.RandomResizedCrop(size=img_size, scale=(0.5, 1)),
@@ -58,32 +56,39 @@ class HistoCRCDataset(Dataset):
         img_dir: str,
         augmentation: Optional[v2.Transform] = None,
         reduce_to_binary: bool = False,
+        ignore_categories: list = [],
     ):
         self.img_dir = Path(img_dir)
         self.augmentation = augmentation
+        self._ignore_categories = set(ignore_categories)
 
         cat_img_map = {
             x.stem: imgs
-            for x in self.img_dir.iterdir()
-            if x.is_dir() and len(imgs := get_imgs(x)) > 0
+            for x in sorted(list(self.img_dir.iterdir()))
+            if x.is_dir() and len(imgs := get_imgs(x)) > 0 and x.stem not in self._ignore_categories
         }
+
+        self.tumor_cats = {"TUM", "STR"}
         if reduce_to_binary:
-            tum_cat = {"TUM", "STR"}
             cat_img_map = {
-                "NORM": sum((cat_img_map[cat] for cat in set(cat_img_map.keys()) - tum_cat), []),
-                "TUM": sum((cat_img_map[cat] for cat in tum_cat), []),
+                "NORM": sum((cat_img_map[cat] for cat in set(cat_img_map.keys()) - self.tumor_cats), []),
+                "TUM": sum((cat_img_map[cat] for cat in self.tumor_cats), []),
             }
-        self.categories = list(cat_img_map.keys())
-        self.n_classes = len(self.categories)
+
+        self.categories = sorted(list(cat_img_map.keys()))
+        self.n_categories = len(self.categories)
+        self.cat2id = {cat: i for (i, cat) in enumerate(self.categories)} 
+        self.id2cat = {i: cat for (i, cat) in enumerate(self.categories)}       
 
         img_paths = sum(list(cat_img_map.values()), [])
-        labels = [
-            self.categories.index(cat)
+        ids = [
+            self.cat2id[cat]
             for cat, paths in cat_img_map.items() for _ in paths
         ]
-        categories = [cat for cat, paths in cat_img_map.items() for _ in paths]
+        categories = [self.id2cat[id] for id in ids]
+
         self.data = pd.DataFrame(
-            {"path": img_paths, "label": labels, "category": categories}
+            {"path": img_paths, "ids": ids, "category": categories}
         )
         self._transform = v2.Compose(
             [v2.ToImage(), v2.ToDtype(torch.uint8, scale=True)]
@@ -107,7 +112,7 @@ class HistoCRCDataset(Dataset):
         return w
 
     def describe(self):
-        print(f"Categories ({self.n_classes}): ", self.categories)
+        print(f"Categories ({self.n_categories}): ", self.categories)
         counts = self.data["category"].value_counts(sort=False)
         distr = counts / counts.sum()
         distr.rename("distribution", inplace=True)
@@ -137,11 +142,13 @@ def plot_grid(dataset, N: int = 5):
 if __name__ == "__main__":
     from torch.utils.data import DataLoader
 
-    img_dir = "/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/data/CRC-VAL-HE-7K"
-    aug = get_augmentation(600, mean=[0, 0, 0], std=[1, 1, 1], validation=False)
-    dataset = HistoCRCDataset(img_dir, augmentation=aug, reduce_to_binary=False)
+    img_dir = "/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/tissueMAP/data/NCT-CRC-HE-MERGED"
+    aug = get_augmentation(224, mean=[0, 0, 0], std=[1, 1, 1], validation=False)
+    dataset = HistoCRCDataset(img_dir, augmentation=aug, reduce_to_binary=False, ignore_categories=["BACK"])
     dataset.describe()
+    print(dataset.data)
     plot_grid(dataset, N=5)
+    
 
     train_dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
     X, y = next(iter(train_dataloader))

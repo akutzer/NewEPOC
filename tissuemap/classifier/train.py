@@ -27,11 +27,12 @@ from tissuemap.classifier.utils import validate, validate_binarized
 
 def train(
     backbone: str,
-    train_dirs: str,
+    train_dir: str,
     valid_dir: str,
     save_dir: str = "models/",
     batch_size: int = 64,
     binary: bool = False,
+    ignore_categories: list = []
 ) -> nn.Module:
     run_name = get_run_name(backbone, binary)
     model_save_path = Path(save_dir) / Path(run_name)
@@ -50,14 +51,11 @@ def train(
     valid_aug = get_augmentation(img_size, mean, std, validation=True)
 
     # initialize datasets and dataloaders
-    
-    train_ds = ConcatDataset([HistoCRCDataset(
-        train_dir, augmentation=train_aug, reduce_to_binary=binary
-    ) for  train_dir in train_dirs]
-    )
-    valid_ds = HistoCRCDataset(
-        valid_dir, augmentation=valid_aug, reduce_to_binary=binary
-    )
+    train_ds = HistoCRCDataset(train_dir, augmentation=train_aug, reduce_to_binary=binary, ignore_categories=ignore_categories)
+    train_ds.describe()
+    valid_ds = HistoCRCDataset(valid_dir, augmentation=valid_aug, reduce_to_binary=binary, ignore_categories=ignore_categories)
+    valid_ds.describe()
+
     train_dl = DataLoader(
         train_ds,
         batch_size=batch_size,
@@ -73,21 +71,18 @@ def train(
         num_workers=os.cpu_count(),
         pin_memory=True,
     )
-    train_ds.datasets[0].describe()
 
     # initialize model
-    model = HistoClassifier.from_backbone(backbone, train_ds.datasets[0].categories)
-    model.config.update(
-        {
-            "categories": train_ds.datasets[0].categories,
-            "n_classes": train_ds.datasets[0].n_classes,
-            "inp_height": img_size[0],
-            "inp_width": img_size[1],
-            "mean": mean,
-            "std": std,
-            "backbone": backbone,
-        }
-    )
+    model = HistoClassifier.from_backbone(backbone, train_ds.categories)
+    model.config.update({
+        "categories": train_ds.categories,
+        "n_categories": train_ds.n_categories,
+        "inp_height": img_size[0],
+        "inp_width": img_size[1],
+        "mean": mean,
+        "std": std,
+        "backbone": backbone,
+    })
     model.to(device)
     print(model.head)
     print("Trainable parameters: ",
@@ -95,7 +90,7 @@ def train(
     )
 
     # initialize fastai learner
-    weight = train_ds.datasets[0].inv_weights().to(device)
+    weight = train_ds.inv_weights().to(device)
     criterion = nn.CrossEntropyLoss(weight=weight, label_smoothing=0)
     dls = DataLoaders(train_dl, valid_dl, device=device)
     learner = Learner(
@@ -125,9 +120,9 @@ def train(
 
     # save best checkpoint
     learner.model.save_pretrained(model_save_path)
-    print(model_save_path / "models")
     (model_save_path / "models" / "model.pth").unlink()
     (model_save_path / "models").rmdir()
+
     # store performance of best checkpoint on validation dataset in file
     report = validate(model, valid_dl)
     print(report)
@@ -154,8 +149,8 @@ def get_run_name(backbone: str, is_binary: bool) -> str:
 if __name__ == "__main__":
     backbone = "google/efficientnet-b0" #"microsoft/swinv2-tiny-patch4-window8-256"  # "microsoft/swinv2-tiny-patch4-window8-256" #"google/efficientnet-b0" "google/efficientnet-b3"
     data_dir = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/tissueMAP/data/")
-    train_dirs = [data_dir / "NCT-CRC-HE-100K-RENORM", data_dir / "NCT-CRC-HE-100K-NONORM"]
-    valid_dir = data_dir / "CRC-VAL-HE-7K-RENORM"
+    train_dirs = data_dir / "CRC-VAL-HE-7K" #"NCT-CRC-HE-100K"
+    valid_dir = data_dir / "CRC-VAL-HE-7K"
     save_dir = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/tissueMAP/models/")
 
-    model = train(backbone, train_dirs, valid_dir, save_dir, binary=False, batch_size=64)
+    model = train(backbone, train_dirs, valid_dir, save_dir, binary=False, batch_size=64, ignore_categories=["DEB"])

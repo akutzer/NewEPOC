@@ -169,6 +169,7 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, classifier_mod
                     patches, patches_coords = filter_background(patches, patches_coords, cores)
                     # patches.shape = (n_patches, patch_h, patch_w, 3)
                     # patches_coords.shape = (n_patches, 2)
+                    original_shape = slide_array.shape
                 else:
                     try:
                         slide = openslide.OpenSlide(slide_url)
@@ -202,6 +203,7 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, classifier_mod
 
                     print(f" Loaded slide ({time.time() - start_loading:.2f} seconds)")
                     print(f"Size of WSI: {slide_array.shape}")
+                    original_shape = slide_array.shape
                         
                     if cache:   # Save raw .svs jpg
                         raw_image = Image.fromarray(slide_array)
@@ -215,7 +217,7 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, classifier_mod
 
                     if cache:
                         print("Saving Canny background rejected image...")
-                        canny_img = reconstruct_from_patches(patches, patches_coords, slide_array.shape[:2])
+                        canny_img = reconstruct_from_patches(patches, patches_coords, original_shape[:2])
                         save_image(canny_img, slide_cache_dir/"canny_slide.jpg")
 
                     # Pass raw slide_array for getting the initial concentrations, tissue_patches for actual normalization
@@ -225,7 +227,7 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, classifier_mod
                         patches = normalizer.transform(slide_array, patches, cores, legacy_norm=False)                        
                         print(f"Normalized slide ({time.time() - start_normalizing:.2f} seconds)")
                         if cache:
-                            norm_img = reconstruct_from_patches(patches, patches_coords, slide_array.shape[:2])
+                            norm_img = reconstruct_from_patches(patches, patches_coords, original_shape[:2])
                             save_image(norm_img, slide_cache_dir/"norm_slide.jpg")
 
                     # Remove original slide jpg from memory
@@ -249,6 +251,8 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, classifier_mod
                     )
                     features = extractor.extract(patches, cores, batch_size)
                     patch_cls = patch_classifier.predict_patches(patches, cores, batch_size)
+                    cls_img = reconstruct_from_patches(patches, patches_coords, original_shape[:2], patch_cls)
+                    save_image(cls_img, slide_cache_dir/"classified_slide.jpg")
                     store_features(feat_out_dir, features, patch_cls, patches_coords, extractor.name)
                     logging.info(f" Extracted features from slide: {time.time() - start_time:.2f} seconds ({features.shape[0]} tiles)")
                     num_processed += 1
