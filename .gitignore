@@ -1,5 +1,4 @@
 data/
 models/
-old/
 __pycache__/
-src/marugoto_norm
+ctranspath.pth

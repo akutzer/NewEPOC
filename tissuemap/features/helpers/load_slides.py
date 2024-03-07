@@ -34,7 +34,7 @@ def load_slide(slide: openslide.OpenSlide, target_mpp: float = 256/224, cores: i
     with futures.ThreadPoolExecutor(cores) as executor:
         # map from future to its (row, col) index
         future_coords: Dict[futures.Future, Tuple[int, int]] = {}
-        for i in range(chunks[0]):  # row
+        for i in range(chunks[1]):  # row
             for j in range(chunks[0]):  # column
                 future = executor.submit(
                     _load_tile, slide, (stride*(j, i)), stride, tile_size)
@@ -43,7 +43,7 @@ def load_slide(slide: openslide.OpenSlide, target_mpp: float = 256/224, cores: i
         # write the loaded tiles into an array as soon as they are loaded
         n_tiles_w, n_tiles_h = tile_size * chunks
         img = np.zeros((n_tiles_h, n_tiles_w, 3), dtype=np.uint8)
-        for tile_future in tqdm(futures.as_completed(future_coords), total=chunks[0]*chunks[0], desc='Reading WSI tiles', leave=False):
+        for tile_future in tqdm(futures.as_completed(future_coords), total=chunks[0]*chunks[1], desc='Reading WSI tiles', leave=False):
             i, j = future_coords[tile_future]
             tile = tile_future.result()
             x, y = tile_size * (j, i)    # switch (w,h) to (h,w) for numpy
