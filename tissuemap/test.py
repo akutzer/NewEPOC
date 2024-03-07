@@ -6,12 +6,12 @@ from features.wsi_norm import preprocess
 
 
 
-output_dir= Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/data/NewEPOC-features/")
-wsi_dir= Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/data/NewEPOC/")
-model_path = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/src/ressources/ctranspath.pth")
-classifier_model_path = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/models/efficientnet-b0_binary=False_2024-02-24T11:48:56.609")
-cache_dir = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/data/NewEPOC-features/cache/")
-normalization_template = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/NewEPOC/src/ressources/normalization_template.jpg")
+output_dir= Path("/home/aaron/work/EKFZ/data/NewEPOC/features")
+wsi_dir= Path("/home/aaron/work/EKFZ/data/NewEPOC/wsi")
+model_path = Path("/home/aaron/work/EKFZ/tissueMAP/tissuemap/ressources/ctranspath.pth")
+classifier_model_path = Path("/home/aaron/work/EKFZ/tissueMAP/models/swinv2-tiny-patch4-window8-256_binary=False_2024-03-07T15:53:19.091")
+cache_dir = Path("/home/aaron/work/EKFZ/data/NewEPOC/cache")
+normalization_template = Path("/home/aaron/work/EKFZ/tissueMAP/tissuemap/ressources/normalization_template.jpg")
 
 
 tracemalloc.start()
@@ -22,6 +22,7 @@ preprocess(
     model_path,
     classifier_model_path,
     cache_dir=cache_dir,
+    cache=True,
     norm=True,
     del_slide=False,
     only_feature_extraction=False,
