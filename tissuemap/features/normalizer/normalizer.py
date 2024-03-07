@@ -112,7 +112,7 @@ class MacenkoNormalizer:
         """
         # Convert to OD and ignore background
         I = utils.remove_zeros(I)
-        OD = utils.RGB_to_OD_nojit(I).reshape(-1, 3)
+        OD = utils.RGB_to_OD(I).reshape(-1, 3)
         OD = OD[(OD > luminosity_threshold).any(axis=1)] # main bottleneck of this function
         # tried using np.ma.masked_array, but this slowed down the following code
 
