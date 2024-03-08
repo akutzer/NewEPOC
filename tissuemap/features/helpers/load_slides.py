@@ -1,5 +1,5 @@
 import re
-from typing import Dict, Tuple
+from typing import Tuple
 from concurrent import futures
 import openslide
 from tqdm import tqdm
@@ -33,7 +33,7 @@ def load_slide(slide: openslide.OpenSlide, target_mpp: float = 256/224, cores: i
 
     with futures.ThreadPoolExecutor(cores) as executor:
         # map from future to its (row, col) index
-        future_coords: Dict[futures.Future, Tuple[int, int]] = {}
+        future_coords: dict[futures.Future, Tuple[int, int]] = {}
         for i in range(chunks[1]):  # row
             for j in range(chunks[0]):  # column
                 future = executor.submit(

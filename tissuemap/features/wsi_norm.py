@@ -215,6 +215,9 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, classifier_mod
                     # patches.shape = (n_patches, patch_h, patch_w, 3)
                     # patches_coords.shape = (n_patches, 2)
 
+                    # Remove original slide jpg from memory
+                    del slide_array
+
                     if cache:
                         print("Saving Canny background rejected image...")
                         canny_img = reconstruct_from_patches(patches, patches_coords, original_shape[:2])
@@ -224,14 +227,11 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, classifier_mod
                     if norm:
                         print(f"\nNormalizing slide...")
                         start_normalizing = time.time()                        
-                        patches = normalizer.transform(slide_array, patches, cores, legacy_norm=False)                        
+                        patches = normalizer.transform(patches, cores)                       
                         print(f"Normalized slide ({time.time() - start_normalizing:.2f} seconds)")
                         if cache:
                             norm_img = reconstruct_from_patches(patches, patches_coords, original_shape[:2])
                             save_image(norm_img, slide_cache_dir/"norm_slide.jpg")
-
-                    # Remove original slide jpg from memory
-                    del slide_array
                     
                     # Optionally remove the original slide from harddrive
                     if del_slide:
