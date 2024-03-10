@@ -12,13 +12,14 @@ from utils import validate
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-model_path = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/tissueMAP/models/efficientnet-b0_binary=False_2024-02-28T18:04:40.935")
-model_path = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/tissueMAP/models/swinv2-tiny-patch4-window8-256_binary=False_2024-02-28T18:24:45.937")
+model_path = Path("/home/aaron/work/EKFZ/tissueMAP/models/efficientnet-b0_binary=False_2024-02-28T18:04:40.935")
+model_path = Path("/home/aaron/work/EKFZ/tissueMAP/models/swinv2-tiny-patch4-window8-256_binary=False_2024-02-28T18:24:45.937")
+model_path = Path("/home/aaron/work/EKFZ/tissueMAP/models/ctranspath_binary=False_2024-03-09T10:56:04.523")
 model = HistoClassifier.from_pretrained(model_path)
 model.to(device)
 
 
-data_dir = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/tissueMAP/data/")
+data_dir = Path("/home/aaron/work/EKFZ/data/NCT-CRC-HE")
 valid_dir = data_dir / "NCT-CRC-HE-100K-NONORM" # "NCT-CRC-HE-100K-NONORM"  "CRC-VAL-HE-7K"
 batch_size = 16
 

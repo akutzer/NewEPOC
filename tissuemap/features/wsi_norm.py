@@ -253,7 +253,7 @@ def preprocess(output_dir: Path, wsi_dir: Path, model_path: Path, classifier_mod
                     patch_cls = patch_classifier.predict_patches(patches, cores, batch_size)
                     cls_img = reconstruct_from_patches(patches, patches_coords, original_shape[:2], patch_cls)
                     save_image(cls_img, slide_cache_dir/"classified_slide.jpg")
-                    store_features(feat_out_dir, features, patch_cls, patches_coords, extractor.name)
+                    store_features(feat_out_dir, features, patch_cls, patches_coords, extractor.name, patch_classifier.config.categories)
                     logging.info(f" Extracted features from slide: {time.time() - start_time:.2f} seconds ({features.shape[0]} tiles)")
                     num_processed += 1
                 else:

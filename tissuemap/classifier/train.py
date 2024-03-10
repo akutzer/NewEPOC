@@ -44,9 +44,13 @@ def train(
         torch.set_float32_matmul_precision("high")
 
     # generate augmentation
-    image_processor = AutoImageProcessor.from_pretrained(backbone)
-    img_size = (image_processor.size["height"], image_processor.size["width"])
-    mean, std = image_processor.image_mean, image_processor.image_std
+    if "ctranspath" in backbone:
+        img_size = (224, 224)
+        mean, std= [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
+    else:
+        image_processor = AutoImageProcessor.from_pretrained(backbone)
+        img_size = (image_processor.size["height"], image_processor.size["width"])
+        mean, std = image_processor.image_mean, image_processor.image_std
     train_aug = get_augmentation(img_size, mean, std)
     valid_aug = get_augmentation(img_size, mean, std, validation=True)
 
@@ -141,16 +145,16 @@ def train(
 def get_run_name(backbone: str, is_binary: bool) -> str:
     time = datetime.now().isoformat(timespec="milliseconds")
 
-    backbone_name = backbone[backbone.find("/") + 1 :]
+    backbone_name = Path(backbone).stem
     run_name = f"{backbone_name}_binary={str(is_binary)}_{time}"
     return run_name
 
 
 if __name__ == "__main__":
-    backbone = "google/efficientnet-b0" #"microsoft/swinv2-tiny-patch4-window8-256"  # "microsoft/swinv2-tiny-patch4-window8-256" #"google/efficientnet-b0" "google/efficientnet-b3"
-    data_dir = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/tissueMAP/data/")
+    backbone = "/home/aaron/work/EKFZ/tissueMAP/tissuemap/ressources/ctranspath.pth" #"google/efficientnet-b0" #"microsoft/swinv2-tiny-patch4-window8-256"  # "microsoft/swinv2-tiny-patch4-window8-256" #"google/efficientnet-b0" "google/efficientnet-b3"
+    data_dir = Path("/home/aaron/work/EKFZ/data/NCT-CRC-HE")
     train_dirs = data_dir / "CRC-VAL-HE-7K" #"NCT-CRC-HE-100K"
     valid_dir = data_dir / "CRC-VAL-HE-7K"
-    save_dir = Path("/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/tissueMAP/models/")
+    save_dir = Path("/home/aaron/work/EKFZ/tissueMAP/models/")
 
-    model = train(backbone, train_dirs, valid_dir, save_dir, binary=False, batch_size=64, ignore_categories=["DEB"])
+    model = train(backbone, train_dirs, valid_dir, save_dir, binary=False, batch_size=32, ignore_categories=["DEB"])

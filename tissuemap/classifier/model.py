@@ -8,7 +8,8 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import AutoConfig, AutoModel, PretrainedConfig
 from tqdm import tqdm
 
-from tissuemap.classifier.data import get_augmentation, HistoCRCDataset
+from tissuemap.classifier.data import get_augmentation
+from tissuemap.features.extractor.feature_extractors import load_ctranspath
 
 
 
@@ -23,6 +24,7 @@ class HistoClassifierConfig(PretrainedConfig):
         std: Optional[Tuple[float, float, float]] = None,
         backbone: Optional[str] = None,
         hidden_dim: Optional[int] = None,
+        is_ctranspath: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -34,6 +36,7 @@ class HistoClassifierConfig(PretrainedConfig):
         self.std = std
         self.backbone = backbone
         self.hidden_dim = hidden_dim
+        self.is_ctranspath = is_ctranspath
 
     def to_dict(self):
         config_dict = super().to_dict()
@@ -47,22 +50,26 @@ class HistoClassifierConfig(PretrainedConfig):
                 "std": self.std,
                 "backbone": self.backbone,
                 "hidden_dim": self.hidden_dim,
+                "is_ctranspath": self.is_ctranspath,
             }
         )
         return config_dict
 
 
 class HistoClassifier(nn.Module):
-    def __init__(self, backbone: str, hidden_dim: int, n_classes: int):
+    def __init__(self, backbone: str, hidden_dim: int, n_classes: int, is_ctranspath: bool = False):
         super().__init__()
         self.backbone = backbone
         self.head = nn.Sequential(nn.Flatten(), nn.Linear(hidden_dim, n_classes))
         self.config = None
         self.device = None
         self.dtype = next(self.parameters()).dtype
+        self.is_ctranspath = is_ctranspath
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        out = self.backbone(x).pooler_output
+        out = self.backbone(x)
+        if not self.is_ctranspath:
+            out = out.pooler_output
         out = self.head(out)
         return out
 
@@ -73,7 +80,7 @@ class HistoClassifier(nn.Module):
             x = x.unsqueeze(0)
 
         with torch.inference_mode():
-            pred = self.head(self.backbone(x).pooler_output)
+            pred = self.head(self.backbone(x) if self.is_ctranspath else self.backbone(x).pooler_output)
             probs = torch.softmax(pred, dim=-1).cpu()
             if unsqueeze:
                 probs = probs[0]
@@ -127,25 +134,46 @@ class HistoClassifier(nn.Module):
 
     @classmethod
     def from_backbone(cls, backbone_name: str, categories: List[str], device: str = "cpu"):
-        config = AutoConfig.from_pretrained(backbone_name)
-        if hasattr(config, "hidden_dim"):
-            hidden_dim = config.hidden_dim
-        elif hasattr(config, "hidden_size"):
-            hidden_dim = config.hidden_size
-        else:
-            raise AttributeError
-        config = HistoClassifierConfig(**config.to_dict())
-        config.update(
-            {
-                "hidden_dim": hidden_dim,
-                "n_classes": len(categories),
+        is_ctranspath = "ctranspath" in backbone_name
+        if is_ctranspath:
+            # TODO: refactor
+            backbone = load_ctranspath(backbone_name, device=device)
+            # backbone = FeatureExtractor.from_checkpoint(backbone_name, device=device).model
+            config = HistoClassifierConfig(
+                categories = categories,
+                n_classes = len(categories),
+                inp_height = 224,
+                inp_width = 224,
+                mean= [0.485, 0.456, 0.406],
+                std = [0.229, 0.224, 0.225],
+                backbone = "ctranspath",
+                hidden_dim = 768,
+                is_ctranspath=True
+            )
+            config.update({
                 "id2label": {i: cat for i, cat in enumerate(categories)},
                 "label2id": {cat: i for i, cat in enumerate(categories)},
-            }
-        )
+            })
+        else:
+            config = AutoConfig.from_pretrained(backbone_name)
+            if hasattr(config, "hidden_dim"):
+                hidden_dim = config.hidden_dim
+            elif hasattr(config, "hidden_size"):
+                hidden_dim = config.hidden_size
+            else:
+                raise AttributeError
+            config = HistoClassifierConfig(**config.to_dict())
+            config.update(
+                {
+                    "hidden_dim": hidden_dim,
+                    "n_classes": len(categories),
+                    "id2label": {i: cat for i, cat in enumerate(categories)},
+                    "label2id": {cat: i for i, cat in enumerate(categories)},
+                }
+            )
 
-        backbone = AutoModel.from_pretrained(backbone_name)
-        model = cls(backbone, config.hidden_dim, config.n_classes)
+            backbone = AutoModel.from_pretrained(backbone_name)
+        model = cls(backbone, config.hidden_dim, config.n_classes, is_ctranspath=is_ctranspath)
         model.config = config
         model.to(device)
         return model
@@ -156,8 +184,11 @@ class HistoClassifier(nn.Module):
         assert model_dir.is_dir()
 
         config = HistoClassifierConfig.from_pretrained(model_dir)
-        backbone = AutoModel.from_pretrained(config.backbone)
-        model = cls(backbone, config.hidden_dim, config.n_classes)
+        if config.is_ctranspath:
+            backbone = load_ctranspath(device=device)
+        else:
+            backbone = AutoModel.from_pretrained(config.backbone)
+        model = cls(backbone, config.hidden_dim, config.n_classes, config.is_ctranspath)
         state_dict = torch.load(model_dir / "model.pt", map_location=torch.device("cpu"))
         model.load_state_dict(state_dict)
         model.config = config

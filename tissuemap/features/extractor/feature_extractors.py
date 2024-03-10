@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional
 import hashlib
 import torch
 import torch.nn as nn
@@ -12,6 +12,7 @@ import h5py
 from tqdm import tqdm
 
 from .swin_transformer import swin_tiny_patch4_window7_224, ConvStem
+
 
 __version__ = "001_01-10-2023"
 
@@ -33,26 +34,11 @@ class FeatureExtractor:
 
     @classmethod
     def from_checkpoint(cls, checkpoint_path: str, device: str) -> "FeatureExtractor":
-        # loading the checkpoint weights
-        sha256 = hashlib.sha256()
-        with open(checkpoint_path, "rb") as f:
-            while True:
-                data = f.read(1 << 16)
-                if not data:
-                    break
-                sha256.update(data)
-        assert sha256.hexdigest() == "7c998680060c8743551a412583fac689db43cec07053b72dfec6dcd810113539"
+        model = load_ctranspath(checkpoint_path, device)
         model_name = "xiyuewang-ctranspath-7c998680"
-        ctranspath_weights = torch.load(checkpoint_path, map_location=torch.device("cpu"))
-
-        # initializing the model and updating the weights
-        model = swin_tiny_patch4_window7_224(embed_layer=ConvStem, pretrained=False)
-        model.head = nn.Identity()
-        model.load_state_dict(ctranspath_weights["model"], strict=True)
-
         extractor = cls(model, model_name, device)
-        print("CTransPath model successfully initialized...\n")
 
+        print("CTransPath model successfully initialized...\n")
         return extractor
 
     def extract(
@@ -97,6 +83,28 @@ class FeatureExtractor:
         return features
 
 
+def load_ctranspath(checkpoint_path: Optional[str] = None, device: Optional[str] = None):
+    # initializing the model
+    model = swin_tiny_patch4_window7_224(embed_layer=ConvStem, pretrained=False)
+    model.head = nn.Identity()
+
+    if checkpoint_path is not None:
+        # loading the checkpoint weights updating the weights
+        sha256 = hashlib.sha256()
+        with open(checkpoint_path, "rb") as f:
+            while True:
+                data = f.read(1 << 16)
+                if not data:
+                    break
+                sha256.update(data)
+        assert sha256.hexdigest() == "7c998680060c8743551a412583fac689db43cec07053b72dfec6dcd810113539"
+        weights = torch.load(checkpoint_path, map_location=torch.device("cpu"))
+        model.load_state_dict(weights["model"], strict=True)
+
+    model.to(device)
+    return model
+
+
 def store_metadata(
     outdir: Path,
     extractor_name: str,
@@ -118,17 +126,16 @@ def store_metadata(
 
 
 def store_features(
-    outdir: Path, features: np.ndarray, patch_cls: np.ndarray, patches_coords: np.ndarray, extractor_name: str
+    outdir: Path, features: np.ndarray, patch_cls: np.ndarray, patches_coords: np.ndarray, extractor_name: str, id2class: list
 ):
     with h5py.File(f"{outdir}.h5", "w") as f:
-        f["coords"] = patches_coords[
-            :, ::-1
-        ]  # store as (w, h) not (h, w) for backwards compatibility
+        f["coords"] = patches_coords[:, ::-1]  # store as (w, h) not (h, w) for backwards compatibility
         f["feats"] = features
         f["classes"] = patch_cls[["id", "probability"]]
         f["augmented"] = np.repeat([False, True], [features.shape[0], 0])
         assert len(f["feats"]) == len(f["augmented"])
-        f.attrs["extractor"] = extractor_name
+        f["extractor"] = extractor_name
+        f["id2class"] = id2class
 
 
 class SlideTileDataset(Dataset):
