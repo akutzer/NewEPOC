@@ -10,7 +10,7 @@ training: # used when training the tissue patch classifier
   output_dir:
   train_dir:
   valid_dir:
-  backbone: google/efficientnet-b0 
+  backbone: google/efficientnet-b0
   # backbones:
   #   ctp
   #   uni

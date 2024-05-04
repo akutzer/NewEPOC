@@ -9,7 +9,7 @@ from transformers import AutoConfig, AutoModel, PretrainedConfig
 from tqdm import tqdm
 
 from tissuemap.classifier.data import get_augmentation
-from tissuemap.features.extractor.feature_extractors import load_ctranspath, FeatureExtractor
+from tissuemap.features.extractor.feature_extractors import create_ctranspath, create_uni, FeatureExtractor
 
 
 
@@ -72,7 +72,7 @@ class HistoClassifier(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = self.backbone(x)
-        if not self.is_ctranspath:
+        if not (self.is_ctranspath or self.is_uni):
             out = out.pooler_output
         out = self.head(out)
         return out
@@ -194,7 +194,7 @@ class HistoClassifier(nn.Module):
             )
 
             backbone = AutoModel.from_pretrained(backbone_name)
-        model = cls(backbone, config.hidden_dim, config.n_classes, is_ctranspath=is_ctranspath)
+        model = cls(backbone, config.hidden_dim, config.n_classes, is_ctranspath=is_ctranspath, is_uni=is_uni)
         model.config = config
         model.to(device)
         return model
@@ -206,7 +206,9 @@ class HistoClassifier(nn.Module):
 
         config = HistoClassifierConfig.from_pretrained(model_dir)
         if config.is_ctranspath:
-            backbone = load_ctranspath(device=device)
+            backbone = create_ctranspath(device=device)
+        if config.is_uni:
+            backbone = create_uni(device=device)
         else:
             backbone = AutoModel.from_pretrained(config.backbone)
         model = cls(backbone, config.hidden_dim, config.n_classes, config.is_ctranspath)

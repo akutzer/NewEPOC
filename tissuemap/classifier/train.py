@@ -3,14 +3,14 @@ from datetime import datetime
 
 import torch
 from torch import nn
-from torch.utils.data import DataLoader
+# from torch.utils.data import DataLoader
 from fastai.vision.all import (
-    Learner, DataLoaders, RocAuc, RocAucBinary, F1Score, AccumMetric, 
+    Learner, DataLoader, DataLoaders, RocAuc, RocAucBinary, F1Score, AccumMetric, 
     Precision, Recall, accuracy, SaveModelCallback, CSVLogger, EarlyStoppingCallback,
 )
 from transformers import AutoImageProcessor
 
-from tissuemap.classifier.data import get_augmentation, HistoCRCDataset
+from tissuemap.classifier.data import get_augmentation, HistoCRCDataset, plot_grid
 from tissuemap.classifier.model import HistoClassifier
 from tissuemap.classifier.utils import validate, validate_binarized
 
@@ -69,7 +69,7 @@ def train(
     )
 
     # initialize model
-    model = HistoClassifier.from_backbone(backbone, train_ds.categories)
+    model = HistoClassifier.from_backbone(backbone, train_ds.categories, device=device)
     model.config.update({
         "categories": train_ds.categories,
         "n_categories": train_ds.n_categories,
@@ -79,7 +79,6 @@ def train(
         "std": std,
         "backbone": backbone,
     })
-    model.to(device)
     print(model.head)
     print("Trainable parameters: ",
         sum(param.numel() for param in model.parameters() if param.requires_grad),
@@ -89,7 +88,7 @@ def train(
     weight = train_ds.inv_weights().to(device)
     criterion = nn.CrossEntropyLoss(weight=weight, label_smoothing=0)
     dls = DataLoaders(train_dl, valid_dl, device=device)
-    learner = Learner(
+    learn = Learner(
         dls,
         model,
         loss_func=criterion,
@@ -100,7 +99,7 @@ def train(
             F1Score(average="macro"),
             RocAucBinary(average="macro") if binary else RocAuc(average="macro"),
         ],
-        path=model_save_path,
+        path=model_save_path
     )
 
     cbs = [
@@ -108,10 +107,10 @@ def train(
         EarlyStoppingCallback(monitor="valid_loss", min_delta=0., patience=4),
         CSVLogger(),
     ]
-    learner.fit_one_cycle(n_epoch=2, lr_max=1e-4, wd=1e-6, cbs=cbs)
+    learn.fit_one_cycle(n_epoch=2, lr_max=1e-4, wd=1e-6, cbs=cbs)
 
     # save best checkpoint
-    learner.model.save_pretrained(model_save_path)
+    learn.model.save_pretrained(model_save_path)
     (model_save_path / "models" / "model.pth").unlink()
     (model_save_path / "models").rmdir()
 

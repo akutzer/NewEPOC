@@ -7,6 +7,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import v2 as transforms
 from torchvision.transforms import ToTensor
+import timm
 from PIL import Image
 import numpy as np
 import h5py
@@ -47,7 +48,7 @@ class FeatureExtractor:
         self.dtype = next(self.model.parameters()).dtype
 
     @classmethod
-    def init_ctranspath(cls, checkpoint_path: str, device: str) -> "FeatureExtractor":
+    def init_ctranspath(cls, checkpoint_path: str = None, device: str = "cpu") -> "FeatureExtractor":
         # loading the checkpoint weights
         digest = get_digest(checkpoint_path)
         assert digest == "7c998680060c8743551a412583fac689db43cec07053b72dfec6dcd810113539"
@@ -74,7 +75,7 @@ class FeatureExtractor:
         return extractor
     
     @classmethod
-    def init_uni(cls, asset_dir: str, device: str, **kwargs) -> "FeatureExtractor":
+    def init_uni(cls, asset_dir: str = None, device: str = "cpu", **kwargs) -> "FeatureExtractor":
         """Extracts features from slide tiles. 
         Requirements: 
             Permission from authors via huggingface: https://huggingface.co/MahmoodLab/UNI
@@ -134,7 +135,7 @@ class FeatureExtractor:
 
 
 
-def load_ctranspath(checkpoint_path: Optional[str] = None, device: str = "cpu", ):
+def create_ctranspath(checkpoint_path: Optional[str] = None, device: str = "cpu"):
     # initializing the model
     model = swin_tiny_patch4_window7_224(embed_layer=ConvStem, pretrained=False)
     model.head = nn.Identity()
@@ -149,6 +150,20 @@ def load_ctranspath(checkpoint_path: Optional[str] = None, device: str = "cpu", 
         # initializing the model
         model = swin_tiny_patch4_window7_224(embed_layer=ConvStem, pretrained=False)
         model.head = nn.Identity()
+    model.to(device)
+    return model
+
+
+def create_uni(checkpoint_path: Optional[str] = None, device: str = "cpu"):
+    uni_kwargs = {
+            'model_name': 'vit_large_patch16_224',
+            'img_size': 224, 
+            'patch_size': 16, 
+            'init_values': 1e-5, 
+            'num_classes': 0, 
+            'dynamic_img_size': True
+        }
+    model = timm.create_model(**uni_kwargs)
     model.to(device)
     return model
 

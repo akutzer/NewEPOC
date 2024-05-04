@@ -124,7 +124,7 @@ class HistoCRCDataset(Dataset):
 
 def plot_grid(dataset, N: int = 5):
     """ Plots a random slide and N² - 1 augmentations of the same slide. """
-    fig, axs = plt.subplots(N, N, figsize=(10, 10))
+    fig, axs = plt.subplots(N, N, figsize=(10, 10), sharex=True, sharey=True)
     idx = torch.randint(0, len(dataset), (1,)).item()
     
     aug, dataset.augmentation = dataset.augmentation, None
@@ -132,17 +132,19 @@ def plot_grid(dataset, N: int = 5):
     dataset.augmentation = aug
 
     axs[0, 0].imshow(original.permute(1, 2, 0).numpy())
+    axs[0, 0].axis('off')
     for k in range(1, N * N):
         i, j = k // N, k % N
         img, label = dataset[idx]
         axs[i, j].imshow(img.permute(1, 2, 0).numpy())
+        axs[i, j].axis('off')
     plt.show()
 
 
 if __name__ == "__main__":
     from torch.utils.data import DataLoader
 
-    img_dir = "/home/aaron/Documents/Studium/Informatik/7_Semester/EKFZ/tissueMAP/data/NCT-CRC-HE-MERGED"
+    img_dir = "/home/aaron/work/EKFZ/data/NCT-CRC-HE/NCT-CRC-HE-200K"
     aug = get_augmentation(224, mean=[0, 0, 0], std=[1, 1, 1], validation=False)
     dataset = HistoCRCDataset(img_dir, augmentation=aug, reduce_to_binary=False, ignore_categories=["BACK"])
     dataset.describe()
