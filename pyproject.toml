@@ -35,13 +35,10 @@ dependencies = [
   "openpyxl~=3.1"
 ]
 
-
-[project.urls]
-Homepage = "https://github.com/pypa/sampleproject"
-Issues = "https://github.com/pypa/sampleproject/issues"
-
-
 [tool.hatch.build]
 include = [
   "tissuemap/**/*"
 ]
+
+[project.scripts]
+"tissueMAP" = "tissuemap.cli:main"

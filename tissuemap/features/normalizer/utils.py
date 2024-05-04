@@ -51,7 +51,7 @@ def normalize_rows(A: np.ndarray) -> np.ndarray:
     :param A:
     :return:
     """
-    return A / np.linalg.norm(A, axis=1)[:, None]
+    return A / np.linalg.norm(A, axis=-1, keepdims=True)
 
 
 @njit
@@ -62,16 +62,17 @@ def calc_hematoxylin(source_concentrations, h, w):
 
 
 @njit
-def get_principle_colors(OD: np.ndarray, V: np.ndarray, angular_percentile: int):
-    # Project on this basis.
+def get_principle_colors(OD: np.ndarray, V: np.ndarray, angular_percentile: int = 1):
+    # Project OD pixels on the plane of the two principle components.
     That = OD @ V
 
-    # Angular coordinates with repect to the prinicple, orthogonal eigenvectors
+    # Angular coordinates with respect to the principle, orthogonal eigenvectors
     phi = np.arctan2(That[:, 1], That[:, 0])
-    minPhi = np.percentile(phi, 100 - angular_percentile)
-    maxPhi = np.percentile(phi, angular_percentile)
+    minPhi = np.percentile(phi, angular_percentile)
+    maxPhi = np.percentile(phi, 100 - angular_percentile)
 
-    # the two principle colors
+    # The two principle colors are the unit vectors with the 1- and 99-percentile
+    # angular coordinates in the 2 principle component space of the slide
     v1 = V @ np.array([np.cos(minPhi), np.sin(minPhi)])
     v2 = V @ np.array([np.cos(maxPhi), np.sin(maxPhi)])
     return v1, v2
@@ -82,32 +83,44 @@ def norm_patch(
     stain_matrix_src: np.ndarray,
     stain_matrix_target: np.ndarray,
     max_target_conc: np.ndarray,
+    luminosity_threshold: float = 0.15,
 ) -> np.ndarray:
-    # calculate the source concentration
     patch_shape = patch_OD.shape
     patch_OD = patch_OD.reshape(-1, 3) # shape: (patch_h * patch_w, 3)
-    src_conc, *_ = np.linalg.lstsq(stain_matrix_src.T, patch_OD.T, rcond=None)
-    src_conc = src_conc.T # shape: (patch_h * patch_w, 2)
 
-    max_src_conc = np.percentile(src_conc, 99, axis=0) # shape: (2,)
-    src_conc *= max_target_conc / max_src_conc
+    # ignore background pixels during concentration calculations
+    # to prevent color distortions of the background
+    mask = (patch_OD > luminosity_threshold).any(axis=-1)
+    patch_OD_masked = patch_OD[mask]
+    
+    if patch_OD_masked.shape[0] > 0:
+        # calculate the source concentration
+        src_conc, *_ = np.linalg.lstsq(stain_matrix_src.T, patch_OD_masked.T, rcond=None)
+        src_conc = src_conc.T # shape: (patch_h * patch_w, 2)
 
-    # convert back to RGB color space 
-    patch_normed = np.clip(
-        255 * np.exp(-(src_conc @ stain_matrix_target)), 0, 255
-    ).astype(np.uint8)
+        max_src_conc = np.percentile(src_conc, 99, axis=0) # shape: (2,)
+        src_conc *= max_target_conc / max_src_conc
+
+        # convert HE concentrations back to OD-RGB color space
+        patch_OD[mask] = src_conc @ stain_matrix_target
+    
+    # convert to RGB color space
+    patch_normed = np.clip(255 * np.exp(-patch_OD), 0, 255).astype(np.uint8)
     patch_normed = patch_normed.reshape(patch_shape)
     return patch_normed
 
 
-def get_concentrations(arr: np.ndarray, stain_matrix: np.ndarray) -> np.ndarray:
+def get_concentrations(arr: np.ndarray, stain_matrix: np.ndarray, is_OD: bool = False) -> np.ndarray:
     """
     Get concentrations, a npix x 2 matrix
     :param I:
     :param stain_matrix: a 2x3 stain matrix
     :return:
     """
-    OD = RGB_to_OD(arr).reshape((-1, 3))
+    if not is_OD:
+        OD = RGB_to_OD(arr).reshape(-1, 3)
+    else:
+        OD = arr.reshape(-1, 3)
     try:
         # stain_matrix.T @ x = OD.T
         x, *_ = np.linalg.lstsq(stain_matrix.T, OD.T, rcond=None)

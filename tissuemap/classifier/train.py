@@ -32,7 +32,8 @@ def train(
     save_dir: str = "models/",
     batch_size: int = 64,
     binary: bool = False,
-    ignore_categories: list = []
+    ignore_categories: list = [],
+    cores: int = 8
 ) -> nn.Module:
     run_name = get_run_name(backbone, binary)
     model_save_path = Path(save_dir) / Path(run_name)
@@ -64,16 +65,16 @@ def train(
         train_ds,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=os.cpu_count(),
-        pin_memory=True,
-        drop_last=True,
+        num_workers=cores,
+        pin_memory=device.type == "cuda",
+        drop_last=len(train_ds) > batch_size,
     )
     valid_dl = DataLoader(
         valid_ds,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=os.cpu_count(),
-        pin_memory=True,
+        num_workers=cores,
+        pin_memory=device.type == "cuda",
     )
 
     # initialize model
@@ -101,8 +102,6 @@ def train(
         dls,
         model,
         loss_func=criterion,
-        lr=1e-4,
-        wd=1e-6,
         metrics=[
             AccumMetric(accuracy, flatten=False),
             Precision(average="macro"),
@@ -116,11 +115,11 @@ def train(
     cbs = [
         # CustomSaveModelCallback(monitor='valid_loss', model_save_path=model_save_path),
         SaveModelCallback(monitor='valid_loss'),
-        EarlyStoppingCallback(monitor="valid_loss", min_delta=0.01, patience=4),
+        EarlyStoppingCallback(monitor="valid_loss", min_delta=0., patience=4),
         CSVLogger(),
     ]
 
-    learner.fit_one_cycle(n_epoch=2, lr_max=1e-4, cbs=cbs)
+    learner.fit_one_cycle(n_epoch=2, lr_max=1e-4, wd=1e-6, cbs=cbs)
 
     # save best checkpoint
     learner.model.save_pretrained(model_save_path)
