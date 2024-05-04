@@ -9,7 +9,7 @@ from transformers import AutoConfig, AutoModel, PretrainedConfig
 from tqdm import tqdm
 
 from tissuemap.classifier.data import get_augmentation
-from tissuemap.features.extractor.feature_extractors import load_ctranspath
+from tissuemap.features.extractor.feature_extractors import load_ctranspath, FeatureExtractor
 
 
 
@@ -25,6 +25,7 @@ class HistoClassifierConfig(PretrainedConfig):
         backbone: Optional[str] = None,
         hidden_dim: Optional[int] = None,
         is_ctranspath: bool = False,
+        is_uni: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -37,6 +38,7 @@ class HistoClassifierConfig(PretrainedConfig):
         self.backbone = backbone
         self.hidden_dim = hidden_dim
         self.is_ctranspath = is_ctranspath
+        self.is_uni = is_uni
 
     def to_dict(self):
         config_dict = super().to_dict()
@@ -51,13 +53,14 @@ class HistoClassifierConfig(PretrainedConfig):
                 "backbone": self.backbone,
                 "hidden_dim": self.hidden_dim,
                 "is_ctranspath": self.is_ctranspath,
+                "is_uni": self.is_uni,
             }
         )
         return config_dict
 
 
 class HistoClassifier(nn.Module):
-    def __init__(self, backbone: str, hidden_dim: int, n_classes: int, is_ctranspath: bool = False):
+    def __init__(self, backbone: str, hidden_dim: int, n_classes: int, is_ctranspath: bool = False, is_uni: bool = False):
         super().__init__()
         self.backbone = backbone
         self.head = nn.Sequential(nn.Flatten(), nn.Linear(hidden_dim, n_classes))
@@ -65,6 +68,7 @@ class HistoClassifier(nn.Module):
         self.device = None
         self.dtype = next(self.parameters()).dtype
         self.is_ctranspath = is_ctranspath
+        self.is_uni = is_uni
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = self.backbone(x)
@@ -135,10 +139,9 @@ class HistoClassifier(nn.Module):
     @classmethod
     def from_backbone(cls, backbone_name: str, categories: List[str], device: str = "cpu"):
         is_ctranspath = "ctranspath" in backbone_name
+        is_uni = "uni" in backbone_name
         if is_ctranspath:
-            # TODO: refactor
-            backbone = load_ctranspath(backbone_name, device=device)
-            # backbone = FeatureExtractor.from_checkpoint(backbone_name, device=device).model
+            backbone = FeatureExtractor.init_ctranspath(backbone_name, device=device).model
             config = HistoClassifierConfig(
                 categories = categories,
                 n_classes = len(categories),
@@ -149,6 +152,24 @@ class HistoClassifier(nn.Module):
                 backbone = "ctranspath",
                 hidden_dim = 768,
                 is_ctranspath=True
+            )
+            config.update({
+                "id2label": {i: cat for i, cat in enumerate(categories)},
+                "label2id": {cat: i for i, cat in enumerate(categories)},
+            })
+        elif is_uni:
+            # TODO: freeze first layers
+            backbone = FeatureExtractor.init_uni(backbone_name, device=device).model
+            config = HistoClassifierConfig(
+                categories = categories,
+                n_classes = len(categories),
+                inp_height = 224,
+                inp_width = 224,
+                mean= [0.485, 0.456, 0.406],
+                std = [0.229, 0.224, 0.225],
+                backbone = "uni",
+                hidden_dim = 1024,
+                is_uni=True
             )
             config.update({
                 "id2label": {i: cat for i, cat in enumerate(categories)},

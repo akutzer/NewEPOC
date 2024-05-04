@@ -6,11 +6,17 @@
 # Only use absolute paths!
 
 
-training:
+training: # used when training the tissue patch classifier
   output_dir:
   train_dir:
   valid_dir:
-  backbone:
+  backbone: google/efficientnet-b0 
+  # backbones:
+  #   ctp
+  #   uni
+  #   google/efficientnet-b0
+  #   google/efficientnet-b3
+  #   microsoft/swinv2-tiny-patch4-window8-256
   binary: false
   batch_size: 32
   ignore_categories: [DEB]

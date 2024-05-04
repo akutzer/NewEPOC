@@ -96,9 +96,9 @@ def run_cli(args: argparse.Namespace):
             # Download feature extractor model
             feat_extractor = cfg.preprocessing.feat_extractor
             if feat_extractor == 'ctp':
-                model_path = Path(cfg.preprocessing.model_path)
+                model_path = f"{os.environ['TISSUEMAP_RESOURCES_DIR']}/ctranspath.pth"
             elif feat_extractor == 'uni':
-                model_path = Path(f"{os.environ['TISSUEMAP_RESOURCES_DIR']}/uni")
+                model_path = f"{os.environ['TISSUEMAP_RESOURCES_DIR']}/uni"
             model_path.parent.mkdir(parents=True, exist_ok=True)
             if model_path.exists():
                 print(f"Skipping download, feature extractor model already exists at {model_path}")
@@ -123,12 +123,19 @@ def run_cli(args: argparse.Namespace):
                 prefix="training"
             )
             c = cfg.training
+            if c.backbone == 'ctp':
+                model_path = f"{os.environ['TISSUEMAP_RESOURCES_DIR']}/ctranspath.pth"
+            elif c.backbone == 'uni':
+                model_path = f"{os.environ['TISSUEMAP_RESOURCES_DIR']}/uni"
+            else:
+                model_path = c.backbone
+            
             from .classifier.train import train
             model = train(
                 train_dir=Path(c.train_dir),
                 valid_dir=Path(c.valid_dir),
                 save_dir=Path(c.output_dir),
-                backbone=c.backbone,
+                backbone=model_path,
                 batch_size=c.batch_size,
                 binary=c.binary,
                 ignore_categories=c.ignore_categories,

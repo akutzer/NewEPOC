@@ -1,10 +1,9 @@
-import os
 from pathlib import Path
 from datetime import datetime
 
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, ConcatDataset
+from torch.utils.data import DataLoader
 from fastai.vision.all import (
     Learner, DataLoaders, RocAuc, RocAucBinary, F1Score, AccumMetric, 
     Precision, Recall, accuracy, SaveModelCallback, CSVLogger, EarlyStoppingCallback,
@@ -15,15 +14,7 @@ from tissuemap.classifier.data import get_augmentation, HistoCRCDataset
 from tissuemap.classifier.model import HistoClassifier
 from tissuemap.classifier.utils import validate, validate_binarized
 
-# class CustomSaveModelCallback(SaveModelCallback):
-#     def __init__(self, model_save_path: Path, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-#         self.model_save_path = model_save_path
-    
-#     def _save(self, name):
-#         self.learn.model.save_pretrained(self.model_save_path)
-#         # self.last_saved_path = self.learn.save(name, with_opt=self.with_opt)
-    
+
 
 def train(
     backbone: str,
@@ -41,11 +32,11 @@ def train(
 
     use_gpu = torch.cuda.is_available()
     device = torch.device("cuda" if use_gpu else "cpu")
-    if use_gpu:
+    if use_gpu: # use tensor floats
         torch.set_float32_matmul_precision("high")
 
     # generate augmentation
-    if "ctranspath" in backbone:
+    if "ctranspath" in backbone or "uni" in backbone:
         img_size = (224, 224)
         mean, std= [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
     else:
@@ -113,12 +104,10 @@ def train(
     )
 
     cbs = [
-        # CustomSaveModelCallback(monitor='valid_loss', model_save_path=model_save_path),
         SaveModelCallback(monitor='valid_loss'),
         EarlyStoppingCallback(monitor="valid_loss", min_delta=0., patience=4),
         CSVLogger(),
     ]
-
     learner.fit_one_cycle(n_epoch=2, lr_max=1e-4, wd=1e-6, cbs=cbs)
 
     # save best checkpoint
