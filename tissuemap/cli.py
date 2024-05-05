@@ -180,8 +180,20 @@ def run_cli(args: argparse.Namespace):
             )
 
         case "visualize":
-            raise NotImplementedError()
-            
+            require_configs(
+                cfg,
+                ["output_dir", "feature_dir", "clini_table", "slide_table", "method"],
+                prefix="visualizing"
+            )
+            c = cfg.visualizing
+            from .visualizer.visualizer import visualize
+            visualize(
+                output_dir=Path(c.output_dir),
+                feature_dir=Path(c.feature_dir),
+                clini_table=Path(c.clini_table),
+                slide_table=Path(c.slide_table),
+                method=c.method
+            )            
         case _:
             raise ConfigurationError(f"Unknown command {args.command}")
 

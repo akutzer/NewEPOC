@@ -39,15 +39,21 @@ preprocessing:
   batch_size: 64
 
 visualizing:
-  clini_table: # Path to clini_table file (.xlsx or .csv)
-  slide_table: # Path to slide_table file (.xlsx or .csv)
-  feature_dir: ${preprocessing.output_dir}/tissueMAP_macenko_xiyuewang-ctranspath-7c998680 # Path to feature directory
-  output_dir: # Path to output directory
-  target_label: # Target label. No spaces allowed! Format clinical table accordingly
-  categories: [] # Categories (list), leave empty to automatically infer based on unique values in the target_label column
-  cat_labels: [] # Extra input category labels (list, can be empty)
-  cont_labels: [] # Extra input continuous labels (list, can be empty)
-  n_splits: 5 # Number of splits for cross-validation (only applicable to cross-validation)
-  model_path: /path/to/export.pkl # Path to saved model (only applicable to deployment)
-  deploy_feature_dir: # Path to directory containing the external cohort features (only applicable to deployment)
+  output_dir:
+  feature_dir:
+  clini_table:
+  slide_table:
+  method:
+
+  # clini_table: # Path to clini_table file (.xlsx or .csv)
+  # slide_table: # Path to slide_table file (.xlsx or .csv)
+  # feature_dir: ${preprocessing.output_dir}/tissueMAP_macenko_xiyuewang-ctranspath-7c998680 # Path to feature directory
+  # output_dir: # Path to output directory
+  # target_label: # Target label. No spaces allowed! Format clinical table accordingly
+  # categories: [] # Categories (list), leave empty to automatically infer based on unique values in the target_label column
+  # cat_labels: [] # Extra input category labels (list, can be empty)
+  # cont_labels: [] # Extra input continuous labels (list, can be empty)
+  # n_splits: 5 # Number of splits for cross-validation (only applicable to cross-validation)
+  # model_path: /path/to/export.pkl # Path to saved model (only applicable to deployment)
+  # deploy_feature_dir: # Path to directory containing the external cohort features (only applicable to deployment)
   
